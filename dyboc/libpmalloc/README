@@ -1,0 +1,33 @@
+Type "make library" to construct the pmalloc library.
+
+Type "make" to construct a testing instance of the
+library. Edit main.c to test different version of the library.
+
+To use the pmalloc library, point CFLAGS and LDFLAGS to this directory
+and include the pmalloc library using -lpmalloc. The glib libraries
+also need to be included.
+
+EXAMPLE:
+
+CC = gcc
+OBJS = main.o pmalloc.o
+
+all: main
+
+main: main.o pmalloc.o
+	$(CC) -Wall -g -o pmalloc $(OBJS) $(LIBS)
+
+main.o: main.c
+	$(CC) -Wall -g -c main.c
+
+pmalloc.o: pmalloc.c
+	gcc -Wall -c -g $(CFLAGS) pmalloc.c
+clean:
+	rm *.o
+	rm libpmalloc.a
+	rm pmalloc
+
+library: pmalloc.o
+	ar -rc libpmalloc.a pmalloc.o
+	ranlib libpmalloc.a
+
