@@ -1,0 +1,110 @@
+#!/bin/bash
+
+
+if [[ -z "$THERING_HOME" || ! -d "$THERING_HOME" ]]; then
+	echo "THERING_HOME variable is not set"
+	exit 1
+fi
+if [[ ! -r "$THERING_HOME/thering.conf" ]]; then
+	echo "THERING_HOME not set properly. Cannot find thering.conf"
+	exit 1
+fi
+
+
+. $THERING_HOME/thering.conf
+. $THERING_HOME/scripts/functions.sh
+
+verbose=0
+
+function quit {
+	rm $encname
+	exit $1
+}
+
+function quit2 {
+	sqlstmt="delete from image where path='$encname';"
+	#echo $SQLITE $DBFILE "$sqlstmt"
+	$SQLITE $DBFILE "$sqlstmt" 
+
+	quit $1
+}
+
+function usage {
+	echo "Usage: $0 [OPTIONS] binary arguments ..."
+	echo "Options: -tool_option val     Pass options to tool"
+	echo "Options: -h                   Print this messsage"
+	echo "Options: -v                   Turn on verbose messages"
+
+	exit 1
+}
+
+tool_options=""
+
+until [ -z "$1" ]; do
+    if [[ "$1" == -* ]]; then
+        case "$1" in
+            "-h")
+                usage
+                shift
+                continue
+                ;;
+            "-v")
+                verbose=1
+                shift
+                continue
+                ;;
+        esac
+
+        tool_options="$tool_options $1"
+        shift
+        if [ -z "$1" ]; then
+            echo "Missing binary"
+            exit 1
+        fi
+        tool_options="$tool_options $1"
+        shift
+    else
+        break
+    fi
+done
+
+
+# Check that a binary has been defined
+if [ -z "$1" ]; then
+	usage
+fi
+bin=`which $1`
+shift
+
+if [ ! -r "$bin" ]; then
+	echo "'$bin' not found"
+	exit 1
+fi
+param=$@
+
+# Encode binary
+if [ $verbose -gt 0 ]; then
+	echo "$THERING_HOME/scripts/isrencode -r $bin"
+fi
+encname=`$THERING_HOME/scripts/isrencode -r $bin`
+
+if [ ! -r "$encname" ]; then
+	echo "Could not encode '$bin'"
+	exit 1
+fi
+
+cmd="pin $PIN_OPTIONS -t $THERING_HOME/$WRAPPER_TOOL $TOOL_OPTIONS $tool_options -- $THERING_HOME/$WRAPPER $encname $param"
+echo "$cmd"
+
+# Run PIN
+if [ $verbose -gt 0 ]; then
+	echo "Running PIN"
+	echo $cmd
+fi
+
+trap "quit2 1" $ISR_DEATH_SIGS 
+
+$cmd || quit2 1
+
+quit2 $?
+

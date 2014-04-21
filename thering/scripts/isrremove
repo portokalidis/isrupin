@@ -1,0 +1,47 @@
+#!/bin/bash 
+
+if [[ -z "$THERING_HOME" || ! -d "$THERING_HOME" ]]; then
+	echo "THERING_HOME variable is not set"
+	exit 1
+fi
+if [[ ! -r "$THERING_HOME/thering.conf" ]]; then
+	echo "THERING_HOME not set properly. Cannot find thering.conf"
+	exit 1
+fi
+
+. $THERING_HOME/thering.conf
+. $THERING_HOME/scripts/functions.sh
+
+
+if [ $# -lt 1 ]; then
+	echo "Usage: $0 file [file] ..."
+	exit 1
+fi
+
+
+function remove_file {
+	if [ ! -f "$1" ]; then
+		echo "$1 not found, will be just deleted from database!"
+	fi
+
+	# Remove key from DB
+	sqlstmt="delete from image where path='$1';"
+
+	#echo $SQLITE $DBFILE "$sqlstmt"
+	$SQLITE $DBFILE "$sqlstmt" || exit 1
+
+	# Delete file
+	rm -f "$1"
+}
+
+while [ ! -z "$1" ]; do
+    path=`readlink -f $1`
+    #echo "Removing $path"
+
+
+	remove_file $path
+	echo "$path [Deleted]"
+	shift 1
+done
+
+

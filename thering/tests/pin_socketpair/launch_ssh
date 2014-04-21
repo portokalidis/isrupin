@@ -1,0 +1,4 @@
+#!/bin/sh
+
+LDPRELOAD=./spair.so pin -follow_execv -t tricky.so -- \
+	/home/porto/usr/sbin/sshd -D -p 40000 -e

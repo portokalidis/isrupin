@@ -1,0 +1,12 @@
+ISR
+---
+- Handle memory mapping on top of already mapped executable pages, and remapping
+  executable pages.
+- Support processes generating code, like browsers (e.g., konqueror).
+
+libdft
+------
+
+- Check faults that occur due to mapping the bitmap as noreserve. Such errors
+  should only occur when we run out of memory.
+

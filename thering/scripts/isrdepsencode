@@ -1,0 +1,45 @@
+#!/bin/bash 
+
+if [[ -z "$THERING_HOME" || ! -d "$THERING_HOME" ]]; then
+	echo "THERING_HOME variable is not set"
+	exit 1
+fi
+if [[ ! -r "$THERING_HOME/thering.conf" ]]; then
+	echo "THERING_HOME not set properly. Cannot find thering.conf"
+	exit 1
+fi
+
+. $THERING_HOME/thering.conf
+. $THERING_HOME/scripts/functions.sh
+
+
+if [ $# -lt 1 ]; then
+	echo "Usage: $0 dynamically_linked_file"
+	exit 1
+fi
+
+if [ ! -r $1 ]; then
+	echo "Cannot find $1, or not readable"
+	exit 1
+fi
+
+while [ ! -z "$1" ]; do
+    if [ ! -e "$1" ]; then
+        echo "Invalid file \"$1\"" >&2
+        exit 1
+    fi
+
+    # Get this object's dependencies
+    deps=`ldd $1 |awk '/.+ => .+ \(0x.+\)/ { print $3; }'`
+
+    
+    # Add each dependency and all of its dependencies recursively
+    for l in $deps; do
+        #echo "$1->$l"
+
+        $THERING_HOME/scripts/isrlibencode $l
+        $THERING_HOME/scripts/isrdepsencode $l
+    done
+
+    shift
+done
