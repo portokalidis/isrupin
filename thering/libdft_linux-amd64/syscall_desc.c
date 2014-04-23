@@ -71,11 +71,8 @@
 /* callbacks declaration */
 static void post_read_hook(syscall_ctx_t*);
 static void post_fcntl_hook(syscall_ctx_t*);
-static void post_getgroups16_hook(syscall_ctx_t*);
 static void post_mmap_hook(syscall_ctx_t*);
-static void post_socketcall_hook(syscall_ctx_t*);
 static void post_syslog_hook(syscall_ctx_t*);
-static void post_ipc_hook(syscall_ctx_t*);
 static void post_modify_ldt_hook(syscall_ctx_t*);
 static void post_quotactl_hook(syscall_ctx_t *ctx);
 static void post_readv_hook(syscall_ctx_t*);
@@ -106,7 +103,6 @@ static void post_msgrcv_hook(syscall_ctx_t *ctx);
 static void post_msgctl_hook(syscall_ctx_t *ctx);
 static void post_prctl_hook(syscall_ctx_t *ctx);
 static void post_arch_prctl_hook(syscall_ctx_t *ctx);
-static void post_sendmmsg_hook(syscall_ctx_t *ctx);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
 static void post_recvmmsg_hook(syscall_ctx_t *ctx);
 #endif
@@ -901,21 +897,6 @@ post_read_hook(syscall_ctx_t *ctx)
 	tagmap_clrn(ctx->arg[SYSCALL_ARG1], (size_t)ctx->ret);
 }
 
-#if 0
-/* __NR_getgroups16 post syscall_hook */
-static void
-post_getgroups16_hook(syscall_ctx_t *ctx)
-{
-	/* getgroups16() was not successful */
-	if ((long)ctx->ret <= 0 || (old_gid_t *)ctx->arg[SYSCALL_ARG1] == NULL)
-		return;
-
-	/* clear the tag bits */
-	tagmap_clrn(ctx->arg[SYSCALL_ARG1],
-			(sizeof(old_gid_t) * (size_t)ctx->ret));
-}
-#endif
-
 /* __NR_getgroups post syscall_hook */
 static void
 post_getgroups_hook(syscall_ctx_t *ctx)
@@ -1440,118 +1421,6 @@ post_msgctl_hook(syscall_ctx_t *ctx)
         }
 }
 
-/* __NR_ipc post syscall hook */
-static void
-post_ipc_hook(syscall_ctx_t *ctx)
-{
-	/* semaphore union */
-	union semun *su;
-
-	/* ipc() is a demultiplexer for all SYSV IPC calls */
-	switch ((int)ctx->arg[SYSCALL_ARG0]) {
-		/* msgctl() */
-		case MSGCTL:
-			/* msgctl() was not successful; optimized branch */
-			if (unlikely((long)ctx->ret < 0))
-				return;
-			
-			/* fix the cmd parameter */
-			ctx->arg[SYSCALL_ARG2] -= IPC_FIX;
-
-			/* differentiate based on the cmd */
-			switch ((int)ctx->arg[SYSCALL_ARG2]) {
-				case IPC_STAT:
-				case MSG_STAT:
-					/* clear the tag bits */
-					tagmap_clrn(ctx->arg[SYSCALL_ARG4],
-						sizeof(struct msqid_ds));
-					break;
-				case IPC_INFO:
-				case MSG_INFO:
-					/* clear the tag bits */
-					tagmap_clrn(ctx->arg[SYSCALL_ARG4],
-						sizeof(struct msginfo));
-					break;
-				default:
-					/* nothing to do */
-					return;
-			}
-			break;
-		/* shmctl() */
-		case SHMCTL:
-			/* shmctl() was not successful; optimized branch */
-			if (unlikely((long)ctx->ret < 0))
-				return;
-			
-			/* fix the cmd parameter */
-			ctx->arg[SYSCALL_ARG2] -= IPC_FIX;
-
-			/* differentiate based on the cmd */
-			switch ((int)ctx->arg[SYSCALL_ARG2]) {
-				case IPC_STAT:
-				case SHM_STAT:
-					/* clear the tag bits */
-					tagmap_clrn(ctx->arg[SYSCALL_ARG4],
-						sizeof(struct shmid_ds));
-					break;
-				case IPC_INFO:
-				case SHM_INFO:
-					/* clear the tag bits */
-					tagmap_clrn(ctx->arg[SYSCALL_ARG4],
-						sizeof(struct shminfo));
-					break;
-				default:
-					/* nothing to do */
-					return;
-			}
-			break;
-		/* semctl() */
-		case SEMCTL:
-			/* semctl() was not successful; optimized branch */
-			if (unlikely((long)ctx->ret < 0))
-				return;
-			
-			/* get the semun structure */	
-			su = (union semun *)ctx->arg[SYSCALL_ARG4];
-			
-			/* fix the cmd parameter */
-			ctx->arg[SYSCALL_ARG3] -= IPC_FIX;
-
-			/* differentiate based on the cmd */
-			switch ((int)ctx->arg[SYSCALL_ARG3]) {
-				case IPC_STAT:
-				case SEM_STAT:
-					/* clear the tag bits */
-					tagmap_clrn((size_t)su->buf,
-						sizeof(struct semid_ds));
-					break;
-				case IPC_INFO:
-				case SEM_INFO:
-					/* clear the tag bits */
-					tagmap_clrn((size_t)su->buf,
-						sizeof(struct seminfo));
-					break;
-				default:
-					/* nothing to do */
-					return;
-			}
-			break;
-		/* msgrcv() */
-		case MSGRCV:
-			/* msgrcv() was not successful; optimized branch */
-			if (unlikely((long)ctx->ret <= 0))
-				return;
-			
-			/* clear the tag bits */
-			tagmap_clrn(ctx->arg[SYSCALL_ARG4],
-					(size_t)ctx->ret + sizeof(long));
-			break;
-		default:
-			/* nothing to do */
-			return;
-	}
-}
-
 /* __NR_fcntl post syscall hook */
 static void
 post_fcntl_hook(syscall_ctx_t *ctx)
@@ -1645,29 +1514,6 @@ post_recvfrom_hook(syscall_ctx_t *ctx)
         }
 }
 
-/* __NR_sendmmsg post syscall hook */
-static void
-post_sendmmsg_hook(syscall_ctx_t *ctx)
-{
-	/* message headers; sendmmsg(2) */
-	struct	mmsghdr *msg;
-
-	/* iterators */
-	size_t	i;
-
-	/* sendmmsg() was not successful; optimized branch */
-	if (unlikely((long)ctx->ret < 0))
-		return;
-	
-	/* iterate the mmsghdr structures */
-	for (i = 0; i < (size_t)ctx->ret; i++) {
-		/* get the next mmsghdr structure */
-		msg = ((struct mmsghdr *)ctx->arg[SYSCALL_ARG1]) + i;
-	
-                /* clear the tag bits */
-		tagmap_clrn((size_t)&msg->msg_len, sizeof(unsigned int));
-        }
-}
 /* __NR_recvmsg post syscall hook */
 static void
 post_recvmsg_hook(syscall_ctx_t *ctx)
@@ -1747,163 +1593,6 @@ post_socketpair_hook(syscall_ctx_t *ctx)
 
         /* clear the tag bits */
         tagmap_clrn(ctx->arg[SYSCALL_ARG3], (sizeof(int) * 2));
-}
-
-/* __NR_socketcall post syscall hook */
-static void
-post_socketcall_hook(syscall_ctx_t *ctx)
-{
-	/* message header; recvmsg(2) */
-	struct	msghdr *msg;
-
-	/* iov bytes copied; recvmsg(2) */
-	size_t	iov_tot;
-
-	/* iterators */
-	size_t	i;
-	struct	iovec *iov;
-	
-	/* total bytes received */
-	size_t	tot;
-	
-	/* socket call arguments */
-	unsigned long	*args = (unsigned long *)ctx->arg[SYSCALL_ARG1];
-
-	/* demultiplex the socketcall */
-	switch ((int)ctx->arg[SYSCALL_ARG0]) {
-		case SYS_ACCEPT:
-		case SYS_ACCEPT4:
-		case SYS_GETSOCKNAME:
-		case SYS_GETPEERNAME:
-			/* not successful; optimized branch */
-			if (unlikely((long)ctx->ret < 0))
-				return;
-
-			/* addr argument is provided */
-			if ((void *)args[SYSCALL_ARG1] != NULL) {
-				/* clear the tag bits */
-				tagmap_clrn(args[SYSCALL_ARG1],
-					*((int *)args[SYSCALL_ARG2]));
-				
-				/* clear the tag bits */
-				tagmap_clrn(args[SYSCALL_ARG2], sizeof(int));
-			}
-			break;
-		case SYS_SOCKETPAIR:
-			/* not successful; optimized branch */
-			if (unlikely((long)ctx->ret < 0))
-				return;
-	
-			/* clear the tag bits */
-			tagmap_clrn(args[SYSCALL_ARG3], (sizeof(int) * 2));
-			break;
-		case SYS_RECV:
-			/* not successful; optimized branch */
-			if (unlikely((long)ctx->ret <= 0))
-				return;
-	
-			/* clear the tag bits */
-			tagmap_clrn(args[SYSCALL_ARG1], (size_t)ctx->ret);
-			break;
-		case SYS_RECVFROM:
-			/* not successful; optimized branch */
-			if (unlikely((long)ctx->ret <= 0))
-				return;
-	
-			/* clear the tag bits */
-			tagmap_clrn(args[SYSCALL_ARG1], (size_t)ctx->ret);
-
-			/* sockaddr argument is specified */
-			if ((void *)args[SYSCALL_ARG4] != NULL) {
-				/* clear the tag bits */
-				tagmap_clrn(args[SYSCALL_ARG4],
-					*((int *)args[SYSCALL_ARG5]));
-				
-				/* clear the tag bits */
-				tagmap_clrn(args[SYSCALL_ARG5], sizeof(int));
-			}
-			break;
-		case SYS_GETSOCKOPT:
-			/* not successful; optimized branch */
-			if (unlikely((long)ctx->ret < 0))
-				return;
-	
-			/* clear the tag bits */
-			tagmap_clrn(args[SYSCALL_ARG3],
-					*((int *)args[SYSCALL_ARG4]));
-			
-			/* clear the tag bits */
-			tagmap_clrn(args[SYSCALL_ARG4], sizeof(int));
-			break;
-		case SYS_RECVMSG:
-			/* not successful; optimized branch */
-			if (unlikely((long)ctx->ret <= 0))
-				return;
-
-			/* extract the message header */
-			msg = (struct msghdr *)args[SYSCALL_ARG1];
-
-			/* source address specified */
-			if (msg->msg_name != NULL) {
-				/* clear the tag bits */
-				tagmap_clrn((size_t)msg->msg_name,
-					msg->msg_namelen);
-				
-				/* clear the tag bits */
-				tagmap_clrn((size_t)&msg->msg_namelen,
-						sizeof(int));
-			}
-			
-			/* ancillary data specified */
-			if (msg->msg_control != NULL) {
-				/* clear the tag bits */
-				tagmap_clrn((size_t)msg->msg_control,
-					msg->msg_controllen);
-				
-				/* clear the tag bits */
-				tagmap_clrn((size_t)&msg->msg_controllen,
-						sizeof(int));
-			}
-
-			/* flags; clear the tag bits */
-			tagmap_clrn((size_t)&msg->msg_flags, sizeof(int));
-
-			/* total bytes received */	
-			tot = (size_t)ctx->ret;
-
-			/* iterate the iovec structures */
-			for (i = 0; i < msg->msg_iovlen && tot > 0; i++) {
-				/* get the next I/O vector */
-				iov = &msg->msg_iov[i];
-
-				/* get the length of the iovec */
-				iov_tot = (tot > (size_t)iov->iov_len) ?
-						(size_t)iov->iov_len : tot;
-	
-				/* clear the tag bits */
-				tagmap_clrn((size_t)iov->iov_base, iov_tot);
-		
-				/* housekeeping */
-				tot -= iov_tot;
-			}
-			break;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
-		case SYS_RECVMMSG:
-			/* fix the syscall context */
-			ctx->arg[SYSCALL_ARG0] = args[SYSCALL_ARG0];
-			ctx->arg[SYSCALL_ARG1] = args[SYSCALL_ARG1];
-			ctx->arg[SYSCALL_ARG2] = args[SYSCALL_ARG2];
-			ctx->arg[SYSCALL_ARG3] = args[SYSCALL_ARG3];
-			ctx->arg[SYSCALL_ARG4] = args[SYSCALL_ARG4];
-
-			/* invoke __NR_recvmmsg post syscall hook */
-			post_recvmmsg_hook(ctx);
-			break;
-#endif
-		default:
-			/* nothing to do */
-			return;
-	}
 }
 
 /* 

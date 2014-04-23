@@ -1,5 +1,15 @@
 ### Pin stuff
-set (PIN_HOME /opt/pin)
+if (NOT PIN_HOME)
+	set (PIN_HOME $ENV{PIN_HOME})
+endif ()
+if (NOT PIN_HOME)
+	set (PIN_HOME /opt/pin)
+	message(STATUS "PIN_HOME not declared, defaulting to ${PIN_HOME}")
+endif ()
+
+if (NOT EXISTS "${PIN_HOME}/pin")
+	message(FATAL_ERROR "pin not found in ${PIN_HOME}") 
+endif ()
 
 if (${CMAKE_SYSTEM_NAME} MATCHES Linux)
 	set(PIN_CXXFLAGS -fPIC -fno-strict-aliasing -unknown-pragmas 

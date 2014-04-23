@@ -16,7 +16,7 @@ else ()
 	add_definitions(-O3)
 endif ()
 
-add_definitions(-Wall -Wextra -Wno-unused-parameter -Wno-unused-result)
+add_definitions(-Wall -Wextra -Wno-unused-parameter -Wno-unused-result -Werror)
 
 #else ()
 
