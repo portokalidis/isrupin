@@ -500,7 +500,7 @@ int posix_memalign(void **memptr, size_t alignment, size_t size)
 	void *ptr;
 
 #ifdef PMALLOC_DEBUG
-	fprintf(stderr, "posix_memalign: %u %u\n", alignment, size);
+	fprintf(stderr, "posix_memalign: %lu %lu\n", alignment, size);
 #endif
 
 	ptr = pmalloc(size);
@@ -569,7 +569,7 @@ void *pmalloc(size_t len)
 		offset = 0;
 
 #ifdef PMALLOC_DEBUG
-	printf("pmalloc: len=%u, real_len=%u\n", len, real_len);
+	fprintf(stderr, "pmalloc: len=%lu, real_len=%lu\n", len, real_len);
 #endif
 
 	if((buf = mmap(NULL, real_len, PROT_READ | PROT_WRITE, 
@@ -646,7 +646,7 @@ void *pmalloc(size_t len)
 #endif
 
 #ifdef PMALLOC_DEBUG
-	printf("         start=%8p end(excl)=%8p ptr=%8p\n", buf, 
+	fprintf(stderr, "         start=%8p end(excl)=%8p ptr=%8p\n", buf, 
 			buf + real_len, ptr);
 #endif
 #if 0
@@ -686,8 +686,8 @@ static void *unprotect_area(void *ptr, size_t *real_len, size_t *lenp)
 	*lenp = len;
 
 # ifdef PMALLOC_DEBUG
-	printf("unprotect_area: start=%p, ptr=%p, len=%u, real_len=%u\n",
-			start, ptr, len, *real_len);
+	fprintf(stderr, "unprotect_area: start=%p, ptr=%p, len=%lu, "
+			"real_len=%lu\n", start, ptr, len, *real_len);
 # endif
 
 	/* Unprotect last guard page */
@@ -731,8 +731,8 @@ static void *unprotect_area(void *ptr, size_t *real_len, size_t *lenp)
 			PAGE_SIZE - sizeof(size_t));
 
 # ifdef PMALLOC_DEBUG
-	printf("unprotect_area: start=%p, ptr=%p, len=%u, real_len=%u\n",
-			start, ptr, len, *real_len);
+	fprintf(stderr, "unprotect_area: start=%p, ptr=%p, len=%lu, "
+			"real_len=%lu\n", start, ptr, len, *real_len);
 # endif
 
 #elif defined(PMALLOC_OVER)
@@ -746,7 +746,8 @@ static void *unprotect_area(void *ptr, size_t *real_len, size_t *lenp)
 	offset = ptr - start;
 
 # ifdef PMALLOC_DEBUG
-	printf("unprotect_area: start=%p, ptr=%p, len=%u\n", start, ptr, len);
+	fprintf(stderr, "unprotect_area: start=%p, ptr=%p, len=%lu\n", 
+			start, ptr, len);
 # endif
 
 	/* Unprotect guard page */
@@ -762,8 +763,8 @@ static void *unprotect_area(void *ptr, size_t *real_len, size_t *lenp)
 			PAGE_SIZE - sizeof(size_t));
 
 # ifdef PMALLOC_DEBUG
-	printf("start=%p, ptr=%p, len=%u, real_len=%u\n", start, ptr, len,
-			*real_len);
+	fprintf(stderr, "start=%p, ptr=%p, len=%lu, real_len=%lu\n", 
+			start, ptr, len, *real_len);
 # endif
 
 	// Check that the two locations were we stored the length of the ptrfer
@@ -797,7 +798,7 @@ void *pcalloc(size_t nmemb, size_t size)
 
 void free(void *ptr)
 {
-	return pfree(ptr);
+	pfree(ptr);
 }
 
 /* 
@@ -812,16 +813,16 @@ void pfree(void *buf)
 	void *start;
 	size_t len, real_len;
 
-#ifdef PMALLOC_DEBUG
-	printf("pfree: ptr=%p\n", buf);
-#endif
-
 	if (!buf) {
 #ifdef PMALLOC_DEBUG
-		printf("pfree: NULL pointer\n");
+		fprintf(stderr, "pfree: NULL pointer\n");
 #endif
 		return;
 	}
+
+#ifdef PMALLOC_DEBUG
+	fprintf(stderr, "pfree: ptr=%p\n", buf);
+#endif
 
 	start = unprotect_area(buf, &real_len, &len);
 
@@ -845,7 +846,7 @@ void *prealloc(void *ptr, size_t size)
 	size_t old_len, old_arealen;
 
 #ifdef PMALLOC_DEBUG
-	printf("prealloc: old_ptr=%p new size=%u\n", ptr, size);
+	fprintf(stderr, "prealloc: old_ptr=%p new size=%lu\n", ptr, size);
 #endif
 
 	if (!ptr)

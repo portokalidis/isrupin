@@ -1,7 +1,7 @@
 #GLIB_CFLAGS=$(shell pkg-config --cflags glib-2.0)
 #GLIB_LIBS=$(shell pkg-config --libs glib-2.0)
 LIBS+=$(GLIB_LIBS)
-CFLAGS+=$(GLIB_CFLAGS) -g -Wall
+CFLAGS+=$(GLIB_CFLAGS) -g -Wall -Werror
 CFLAGS+=-fPIC
 
 PROG_NAME=test_pmalloc
@@ -19,7 +19,6 @@ $(DLIBRARIES): %.so: %.o
 $(LIBRARIES): %.a: %.o
 	ar -rc $@ $<
 	ranlib $@
-
 
 libpmalloc.o: pmalloc.c pmalloc.h
 	$(CC) $(CFLAGS) -DPMALLOC_DEFAULT -o $@ -c $<
