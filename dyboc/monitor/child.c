@@ -8,6 +8,64 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
+#include "monitor.h"
+#include "child.h"
+
+//! Message header
+#define MSG_HEADER "<ActionMessageType>\n"
+//! Message footer
+#define MSG_FOOTER  "</ActionMessageType>\n"
+
+/**
+ * Macro that logs a message in the log file and to stderr if it has been 
+ * log_stderr is set
+ */
+#define LOG_MESSAGE(...) \
+	do {\
+		fprintf(log_fp, __VA_ARGS__);\
+		if (log_stderr)\
+			fprintf(stderr, __VA_ARGS__);\
+	} while (0)
+
+
+
+/**
+ * Return minestrone message for execution status.
+ *
+ * @param status	Exit status
+ * @param code		Exit code
+ *
+ * @return string containing message
+ */
+static void action_message(actionmsg_type_t msgtype)
+{
+	LOG_MESSAGE("<ActionMessageType>\n");
+
+	LOG_MESSAGE("\t<ActionEnumType>");
+	switch (msgtype) {
+	case ACTIONMSG_NONE:
+		LOG_MESSAGE("NONE");
+		break;
+
+	case ACTIONMSG_CONTROLLED_EXIT:
+		LOG_MESSAGE("CONTROLLED_EXIT");
+		break;
+
+	case ACTIONMSG_CONTINUED_EXIT:
+		LOG_MESSAGE("CONTINED_EXIT");
+		break;
+	
+	case ACTIONMSG_OTHER:
+		LOG_MESSAGE("OTHER");
+		break;
+
+	default:
+		abort();
+	}
+	LOG_MESSAGE("</ActionEnumType>\n");
+
+	LOG_MESSAGE("</ActionMessageType>\n");
+}
 
 /**
  * Process an event received from the child.
@@ -66,7 +124,7 @@ int child_execute(int cmdline_idx, char **argv)
  *
  * @return 0 on success, or -1 on error
  */
-int child_monitor(char **argv)
+int child_monitor()
 {
 	pid_t wpid;
 	int wstatus;
@@ -78,8 +136,10 @@ int child_monitor(char **argv)
 			break;
 	}
 
-	if (errno == ECHILD)
+	if (errno == ECHILD) {
+		action_message(ACTIONMSG_NONE);
 		return 0;
-	perror(argv[0]);
+	}
+	perror("child_monitor");
 	return -1;
 }
