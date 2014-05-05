@@ -1,8 +1,7 @@
-CFLAGS=-O3 -Wall -Werror -DMONITOR_DEBUG -I../libpmalloc
+CFLAGS:=-O3 -Wall -Werror -I../libpmalloc 
+#CFLAGS+=-DMONITOR_DEBUG 
 
-#DFLAGS=-DMONITOR_DEBUG -DNDEBUG
-
-MONITOR_OBJS=monitor.o child.o
+MONITOR_OBJS:=monitor.o child.o
 
 
 .PHONY: all clean
@@ -16,4 +15,5 @@ monitor: $(MONITOR_OBJS)
 	$(CC) $(CFLAGS) -c $<
 
 clean:
+	cd tests && make clean
 	rm -f $(MONITOR_OBJS) monitor

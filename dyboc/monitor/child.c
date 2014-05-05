@@ -41,25 +41,46 @@
 
 
 //! Flag determining if an action message has already been issued
-static int action_message_issued = 0;
+static int minestrone_write_action_issued = 0;
+
+//! Last exit code by monitored processes
+static int last_exit_status = EXIT_SUCCESS;
 
 
-/**
- * Return minestrone message for execution status.
- *
- * @param status	Exit status
- * @param code		Exit code
- *
- * @return string containing message
- */
-static void action_message(actionmsg_type_t msgtype)
+static void minestrone_write_return_code(int code)
 {
-	if (action_message_issued)
+	LOG_MESSAGE("<return_code>%d</return_code>\n", code);
+}
+
+static void minestrone_write_status(status_type_t status)
+{
+	switch (status) {
+	case STATUS_SUCCESS:
+		LOG_MESSAGE("<status>SUCCESS</status>\n");
+		break;
+
+	case STATUS_OTHER:
+		LOG_MESSAGE("<status>OTHER</status>\n");
+		break;
+
+	case STATUS_TIMEOUT:
+		LOG_MESSAGE("<status>TIMEOUT</status>\n");
+		break;
+
+	case STATUS_SKIP:
+		LOG_MESSAGE("<status>SKIP</status>\n");
+		break;
+	}
+}
+
+static void minestrone_write_action(actionmsg_type_t msgtype)
+{
+	if (minestrone_write_action_issued)
 		return;
 
-	LOG_MESSAGE("<ActionMessageType>\n");
+	LOG_MESSAGE("<action>\n");
 
-	LOG_MESSAGE("\t<ActionEnumType>");
+	LOG_MESSAGE("<behavior>");
 	switch (msgtype) {
 	case ACTIONMSG_NONE:
 		LOG_MESSAGE("NONE");
@@ -70,7 +91,7 @@ static void action_message(actionmsg_type_t msgtype)
 		break;
 
 	case ACTIONMSG_CONTINUED_EXECUTION:
-		LOG_MESSAGE("CONTINED_EXIT");
+		LOG_MESSAGE("CONTINUED_EXECUTION");
 		break;
 	
 	case ACTIONMSG_OTHER:
@@ -80,11 +101,13 @@ static void action_message(actionmsg_type_t msgtype)
 	default:
 		abort();
 	}
-	LOG_MESSAGE("</ActionEnumType>\n");
+	LOG_MESSAGE("</behavior>\n");
 
-	LOG_MESSAGE("</ActionMessageType>\n");
+	// XXX: Also weakness, impact, additional_information
 
-	action_message_issued = 1;
+	LOG_MESSAGE("</action>\n");
+
+	minestrone_write_action_issued = 1;
 }
 
 /**
@@ -129,8 +152,7 @@ static int analyze_access_error(pid_t pid, siginfo_t *info)
 			return 0;
 	}
 
-	LOG_MESSAGE("Fault in DYBOC guard page!\n");
-	action_message(ACTIONMSG_CONTROLLED_EXIT);
+	minestrone_write_action(ACTIONMSG_CONTROLLED_EXIT);
 	return 1;
 }
 
@@ -198,10 +220,12 @@ static int process_event(pid_t pid, int status)
 
 	if (WIFEXITED(status)) {
 		DBG_PRINT("Exited normally!\n");
+		last_exit_status = WEXITSTATUS(status);
 		return 0;
 	} else if (WIFSIGNALED(status)) {
 		signo = WTERMSIG(status);
-		DBG_PRINT("Terminated by signal %d!\n", WTERMSIG(status));
+		fprintf(stderr, "Terminated by signal %d\n", WTERMSIG(status));
+		last_exit_status = signo;
 		return 0;
 	} else if (WIFSTOPPED(status)) {
 		signo = WSTOPSIG(status);
@@ -245,19 +269,23 @@ int child_execute(int cmdline_idx, char **argv)
 int child_monitor()
 {
 	pid_t wpid;
-	int wstatus;
+	int wstatus, r = 0;
 
 	while ((wpid = waitpid(-1, &wstatus, __WALL)) >= 0) {
 		assert(wpid > 0);
-		fprintf(stderr, "EVENT: from %d\n", wpid);
+		DBG_PRINT("EVENT: from %d\n", wpid);
 		if (process_event(wpid, wstatus) != 0)
 			break;
 	}
 
-	if (errno == ECHILD) {
-		action_message(ACTIONMSG_NONE);
-		return 0;
+	minestrone_write_return_code(last_exit_status);
+
+	if (errno != ECHILD) {
+		perror("child_monitor");
+		r = -1;
+		minestrone_write_status(STATUS_OTHER);
+	} else {
+		minestrone_write_status(STATUS_SUCCESS);
 	}
-	perror("child_monitor");
-	return -1;
+	return r;
 }
