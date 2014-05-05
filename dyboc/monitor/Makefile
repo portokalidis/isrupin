@@ -1,5 +1,6 @@
-CFLAGS=-O3 -Wall -Werror
-DFLAGS=-DMONITOR_DEBUG -DNDEBUG
+CFLAGS=-O3 -Wall -Werror -DMONITOR_DEBUG -I../libpmalloc
+
+#DFLAGS=-DMONITOR_DEBUG -DNDEBUG
 
 MONITOR_OBJS=monitor.o child.o
 
