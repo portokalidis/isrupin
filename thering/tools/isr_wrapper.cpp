@@ -51,7 +51,6 @@ static VOID usage(void)
 		"the execution wrapper. Executed children will be run with the "
 		"proper PIN tool and use randomized libraries." << endl;
 	cerr << KNOB_BASE::StringKnobSummary() << endl;
-
 }
 
 

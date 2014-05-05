@@ -1,0 +1,5 @@
+REASSURE component
+------------------
+
+Don't install strip or replace it with /bin/true at least in the thering
+container. Binaries with symbols are easier to install rescue points on.

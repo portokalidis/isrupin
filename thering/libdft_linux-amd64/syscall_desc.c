@@ -103,6 +103,9 @@ static void post_msgrcv_hook(syscall_ctx_t *ctx);
 static void post_msgctl_hook(syscall_ctx_t *ctx);
 static void post_prctl_hook(syscall_ctx_t *ctx);
 static void post_arch_prctl_hook(syscall_ctx_t *ctx);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0)
+static void post_sendmmsg_hook(syscall_ctx_t *ctx);
+#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
 static void post_recvmmsg_hook(syscall_ctx_t *ctx);
 #endif
@@ -1513,6 +1516,32 @@ post_recvfrom_hook(syscall_ctx_t *ctx)
                 tagmap_clrn(ctx->arg[SYSCALL_ARG5], sizeof(int));
         }
 }
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0)
+/* __NR_sendmmsg post syscall hook */
+static void
+post_sendmmsg_hook(syscall_ctx_t *ctx)
+{
+	/* message headers; sendmmsg(2) */
+	struct	mmsghdr *msg;
+
+	/* iterators */
+	size_t	i;
+
+	/* sendmmsg() was not successful; optimized branch */
+	if (unlikely((long)ctx->ret < 0))
+		return;
+	
+	/* iterate the mmsghdr structures */
+	for (i = 0; i < (size_t)ctx->ret; i++) {
+		/* get the next mmsghdr structure */
+		msg = ((struct mmsghdr *)ctx->arg[SYSCALL_ARG1]) + i;
+	
+                /* clear the tag bits */
+		tagmap_clrn((size_t)&msg->msg_len, sizeof(unsigned int));
+        }
+}
+#endif
 
 /* __NR_recvmsg post syscall hook */
 static void

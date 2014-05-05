@@ -7,24 +7,23 @@ option(USE_DTA "Enable DTA module" ON)
 option(SAFECOPY_RESTORE "REASSURE uses safecopy to restore checkpoints" ON)
 option(BLOCKINGRP "REASSURE supports blocking rescue points" ON)
 option(DEBUG "Enable debugging" OFF)
+option(MINESTRONE "Use minestrone-style reporting and watchdog" OFF)
 
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG -O0")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+
 if (DEBUG)
 	set (CMAKE_BUILD_TYPE Debug)
-	add_definitions(-O0)
-else ()
-	add_definitions(-O3)
 endif ()
 
 add_definitions(-Wall -Wextra -Wno-unused-parameter -Wno-unused-result -Werror)
 
-#else ()
+# MINESTRONE style
+if (MINESTRONE)
+	add_definitions(-DMINESTRONE)
+	add_subdirectory(libminestrone)
+endif ()
 
-#if (DEBUG)
-	#add_definitions(-O0 -g -DDEBUG)
-#else ()
-	#add_definitions(-O3 -D${CMAKE_BUILD_TYPE})
-#endif ()
 
 # DTA
 if (USE_DTA)

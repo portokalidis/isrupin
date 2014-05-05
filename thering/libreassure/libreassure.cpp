@@ -1699,6 +1699,35 @@ reassure_ehandling_result_t libreassure_handle_internal_fault(THREADID tid,
 }
 
 /**
+ * Return true if it can be determined that the exception was due to a
+ * null pointer.
+ *
+ * @param einfo 	Pointer to exception information
+ *
+ * @return true if it is a null pointer or false otherwise
+ */
+bool reassure_exception_nullpointer(const EXCEPTION_INFO *einfo)
+{
+	EXCEPTION_CODE code;
+	ADDRINT fault_addr;
+
+	if (!einfo)
+		return false;
+
+	code = PIN_GetExceptionCode(einfo);
+	if (PIN_GetExceptionClass(code) != EXCEPTCLASS_ACCESS_FAULT)
+		return false;
+
+	if (!PIN_GetFaultyAccessAddress(einfo, &fault_addr))
+		return false;
+
+	if (fault_addr != 0)
+		return false;
+
+	return true;
+}
+
+/**
  * Initialize the reassure library.
  *
  * @param conf_fn Filename to read configuration (i.e., rescue points

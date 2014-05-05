@@ -163,7 +163,8 @@ static void dta_flow_altered(THREADID tid, const CONTEXT *ctx, ADDRINT bt)
  *
  * @return TRUE if the fault was handled, exit otherwise
  */
-static BOOL fault_handler(THREADID tid, CONTEXT *ctx, bool internal = false)
+static BOOL fault_handler(THREADID tid, CONTEXT *ctx, 
+		const EXCEPTION_INFO *einfo, bool internal = false)
 {
 #ifdef USE_REASSURE
 	if (reassure.Value()) {
@@ -172,8 +173,11 @@ static BOOL fault_handler(THREADID tid, CONTEXT *ctx, bool internal = false)
 		res = libreassure_handle_fault(tid, ctx);
 		if (res == RHR_RESCUED) {
 # ifdef MINESTRONE
-			UINT32 cwe = reassure_tool_known_cwe(info);
-			minestrone_notify(cwe, "DOS_INSTABILITY");
+			if (reassure_exception_nullpointer(einfo)) {
+				// CWE-476 NULL Pointer Dereference
+				minestrone_notify(CWE_NULLPOINTER, 
+						"DOS_INSTABILITY");
+			}
 # endif
 			if (internal)
 				PIN_ExecuteAt(ctx);
@@ -224,6 +228,7 @@ static BOOL signal_handler(THREADID tid, INT32 sig, CONTEXT *ctx,
 			if (code_injection) {
 				OUTLOG("!!!Code-injection detected!!!\n");
 
+				// CWE-94 Failure to Control Generation of Code
 				minestrone_notify(CWE_CI, 
 						"EXECUTE_UNAUTHORIZED_CODE");
 
@@ -240,7 +245,8 @@ static BOOL signal_handler(THREADID tid, INT32 sig, CONTEXT *ctx,
 				OUTLOG("!!!Control-flow alteration "
 						"detected!!!\n");
 				// CWE-691 Insufficient Control Flow Management
-				minestrone_notify(691, "ALTER_EXECUTION_LOGIC");
+				minestrone_notify(CWE_CF, 
+						"ALTER_EXECUTION_LOGIC");
 				dta_alert_issued = FALSE;
 				hijacking = true;
 			}
@@ -248,7 +254,7 @@ static BOOL signal_handler(THREADID tid, INT32 sig, CONTEXT *ctx,
 #endif
 	}
 
-	if (fault_handler(tid, ctx))
+	if (fault_handler(tid, ctx, einfo))
 		return FALSE; // Supress signal
 
 	if (hijacking || code_injection) {
@@ -290,7 +296,7 @@ EXCEPT_HANDLING_RESULT internal_fault_handler(THREADID tid,
 	}
 #endif
 
-	fault_handler(tid, &ctx, true);
+	fault_handler(tid, &ctx, info, true);
 	return EHR_UNHANDLED;
 }
 

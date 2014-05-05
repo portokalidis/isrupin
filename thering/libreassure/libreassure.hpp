@@ -25,4 +25,6 @@ reassure_ehandling_result_t libreassure_handle_fault(THREADID tid,
 reassure_ehandling_result_t libreassure_handle_internal_fault(THREADID tid, 
 		CONTEXT *ctx, EXCEPTION_INFO *info);
 
+bool reassure_exception_nullpointer(const EXCEPTION_INFO *einfo);
+
 #endif

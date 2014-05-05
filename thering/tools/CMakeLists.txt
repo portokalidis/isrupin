@@ -35,8 +35,17 @@ endif ()
 if (NEEDS_LIBXDEV)
 	set(libcrossdev_DIR ../libcrossdev)
 	find_package(libcrossdev)
+	add_definitions(${LIBCROSSDEV_DEFINITIONS})
 	include_directories(${LIBCROSSDEV_INCLUDE_DIRS})
 	link_directories(${LIBCROSSDEV_LIBRARY_DIRS})
+endif ()
+
+if (MINESTRONE)
+	set(libminestrone_DIR ../libminestrone)
+	find_package(libminestrone)
+	add_definitions(${LIBMINESTRONE_DEFINITIONS})
+	include_directories(${LIBMINESTRONE_INCLUDE_DIRS})
+	link_directories(${LIBMINESTRONE_LIBRARY_DIRS})
 endif ()
 
 # PIN
@@ -62,6 +71,7 @@ target_link_libraries(thering ${CMAKE_THREAD_LIBS_INIT})
 target_link_libraries(thering ${LIBREASSURE_LIBRARIES})
 target_link_libraries(thering ${LIBDFT_LIBRARIES})
 target_link_libraries(thering ${LIBCROSSDEV_LIBRARIES})
+target_link_libraries(thering ${LIBMINESTRONE_LIBRARIES})
 target_link_libraries(thering ${PIN_LDFLAGS} ${PIN_LIBS})
 
 
