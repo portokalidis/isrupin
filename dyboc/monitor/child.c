@@ -202,6 +202,24 @@ static int process_signal(pid_t pid, int signo)
 	return signo;
 }
 
+static int first_process = 0;
+
+static inline void set_ptrace_options(pid_t pid)
+{
+	long options;
+
+	if (first_process)
+		return;
+
+	options = PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | 
+		PTRACE_O_TRACECLONE;
+
+	if (ptrace(PTRACE_SETOPTIONS, pid, 0, options) != 0)
+		perror("PTRACE_SETOPTIONS");
+
+	first_process = 1;
+}
+
 /**
  * Process an event received from the child.
  *
@@ -226,8 +244,10 @@ static int process_event(pid_t pid, int status)
 	} else if (WIFSTOPPED(status)) {
 		signo = WSTOPSIG(status);
 		DBG_PRINT("Stopped by signal %d!\n", signo);
+		set_ptrace_options(pid);
 		signo = process_signal(pid, signo);
 	}
+
 
 	if (ptrace(PTRACE_CONT, pid, 0, signo) != 0)
 		return -1;
@@ -262,10 +282,11 @@ int child_execute(int cmdline_idx, char **argv)
  *
  * @return 0 on success, or -1 on error
  */
-int child_monitor()
+int child_monitor(pid_t pid)
 {
 	pid_t wpid;
 	int wstatus, r = 0;
+
 
 	while ((wpid = waitpid(-1, &wstatus, __WALL)) >= 0) {
 		assert(wpid > 0);

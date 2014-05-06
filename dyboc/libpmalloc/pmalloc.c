@@ -25,8 +25,6 @@
 
 #include "pmalloc.h"
 
-//#define PMALLOC_DEBUG
-#define PMALLOC_WHITELIST
 
 #ifdef PMALLOC_WHITELIST
 #define WLIST_SIZE 16
@@ -34,6 +32,10 @@
 static size_t *wlist = NULL;
 #endif
 
+// Special error page for generating faults
+static void *error_page = NULL;
+// Fault generation function to use
+static void (*generate_fault)(void);
 
 #if 0
 
@@ -382,7 +384,7 @@ static void check_magic_number(void *ptr, size_t len)
 			fprintf(stderr, "unprotect_area: magic number does "
 					"not match\n");
 #endif
-			raise(SIGSEGV);
+			generate_fault();
 		}
 	}
 	for (magic = PMALLOC_MAGIC_NUMBER; start < end; start++, magic >>= 8) {
@@ -391,7 +393,7 @@ static void check_magic_number(void *ptr, size_t len)
 			fprintf(stderr, "unprotect_area: magic number "
 					"does not match\n");
 #endif
-			raise(SIGSEGV);
+			generate_fault();
 		}
 	}
 
@@ -672,7 +674,7 @@ static void *unprotect_area(void *ptr, size_t *real_len, size_t *lenp)
 	/* Unprotect 1st guard page */
 	if (mprotect(start, PAGE_SIZE, PROT_READ) == -1) {
 		perror("unprotect_area/mprotect");
-		raise(SIGSEGV);
+		generate_fault();
 	}
 
 	// Get the length of the area
@@ -693,7 +695,7 @@ static void *unprotect_area(void *ptr, size_t *real_len, size_t *lenp)
 	/* Unprotect last guard page */
 	if (mprotect(ptr + len, PAGE_SIZE, PROT_READ) == -1) {
 		perror("unprotect_area/mprotect");
-		raise(SIGSEGV);
+		generate_fault();
 	}
 
 	/* Check to make sure lengths are consistant. If not, advise user to 
@@ -701,7 +703,7 @@ static void *unprotect_area(void *ptr, size_t *real_len, size_t *lenp)
 	if(*(size_t *)(ptr + len) != len) {
 		fprintf(stderr, "Error: heap corruption. Inconsistant "
 				"allocation sizes.\n");
-		raise(SIGSEGV);
+		generate_fault();
 	}
 
 	check_magic_number(start + sizeof(size_t),
@@ -714,7 +716,7 @@ static void *unprotect_area(void *ptr, size_t *real_len, size_t *lenp)
 	/* Unprotect guard page */
 	if (mprotect(start, PAGE_SIZE, PROT_READ) == -1) {
 		perror("unprotect_area/mprotect");
-		raise(SIGSEGV);
+		generate_fault();
 	}
 
 	// Get the length of the area
@@ -753,7 +755,7 @@ static void *unprotect_area(void *ptr, size_t *real_len, size_t *lenp)
 	/* Unprotect guard page */
 	if (mprotect(ptr + len, PAGE_SIZE, PROT_READ) == -1) {
 		perror("unprotect_area/mprotect");
-		raise(SIGSEGV);
+		generate_fault();
 	}
 
 	*real_len = len + offset + PAGE_SIZE;
@@ -772,7 +774,7 @@ static void *unprotect_area(void *ptr, size_t *real_len, size_t *lenp)
 	if (len != *(size_t *)(ptr + len)) {
 		fprintf(stderr, "Error: heap corruption. Inconsistant "
 				"allocation sizes.\n");
-		raise(SIGSEGV);
+		generate_fault();
 	}
 #else
 # error "Unspecified unprotect_area behavior"
@@ -828,7 +830,7 @@ void pfree(void *buf)
 
 	if (munmap(start, real_len) == -1) {
 		perror("pfree/munmap");
-		raise(SIGSEGV);
+		generate_fault();
 	}
 }
 
@@ -867,7 +869,7 @@ void *prealloc(void *ptr, size_t size)
 	memcpy(new_ptr, ptr, size);
 	if (munmap(old_area, old_arealen) == -1) {
 		perror("prealloc/munmap");
-		raise(SIGSEGV);
+		generate_fault();
 	}
 	return new_ptr;
 }
@@ -904,13 +906,42 @@ struct whitelist {
 static struct whitelist wlist_conf[WLIST_CONFS] = {
 	{ "grep", { 36865, 0, } }
 };
+#endif
 
+static void raise_signal()
+{
+	raise(SIGSEGV);
+}
+
+static void access_error_page()
+{
+	char *p = (char *)error_page;
+
+	// This should do it
+	*p = 'A';
+}
 
 __attribute__((constructor)) void __init(void)
 {
+#ifdef PMALLOC_WHITELIST
 	int fd, r, i;
 	char cmdline[4096];
+#endif
 
+	error_page = mmap(0, PAGE_SIZE, PROT_READ|PROT_WRITE, 
+			MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+	if (error_page == MAP_FAILED) {
+map_failed:
+		generate_fault = raise_signal;
+		perror("init:mmap");
+	} else {
+		generate_fault = access_error_page;
+		mark_magic_number(error_page, PAGE_SIZE);
+		if (mprotect(error_page, PAGE_SIZE, PROT_NONE) != 0)
+			goto map_failed;
+	}
+
+#ifdef PMALLOC_WHITELIST
 	//fprintf(stderr, "library loaded!\n");
 	
 	fd = open("/proc/self/cmdline", O_RDONLY);
@@ -932,5 +963,5 @@ __attribute__((constructor)) void __init(void)
 
 ret:
 	close(fd);
-}
 #endif
+}

@@ -1,8 +1,10 @@
 #GLIB_CFLAGS=$(shell pkg-config --cflags glib-2.0)
 #GLIB_LIBS=$(shell pkg-config --libs glib-2.0)
 LIBS+=$(GLIB_LIBS)
-CFLAGS+=$(GLIB_CFLAGS) -g -Wall -Werror
-CFLAGS+=-fPIC
+CFLAGS+=$(GLIB_CFLAGS) -g -Wall -Werror -fPIC
+#CFLAGS+=-DPMALLOC_DEBUG
+#CFLAGS+=-DPMALLOC_WHITELIST
+
 
 PROG_NAME=test_pmalloc
 #LIBRARIES=libpmalloc.a libpmalloc_under.a libpmalloc_over.a

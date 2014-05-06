@@ -66,7 +66,7 @@ static int execute_program(int cmdline_idx, char **argv)
 		child_execute(cmdline_idx, argv);
 		return -1;
 	} else if (pid > 0) {
-		return child_monitor();
+		return child_monitor(pid);
 	} else
 		return -1;
 }

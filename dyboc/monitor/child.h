@@ -12,6 +12,6 @@ typedef enum STATUS_ENUM { STATUS_SUCCESS = 0, STATUS_SKIP,
 
 int child_execute(int cmdline_idx, char **argv);
 
-int child_monitor();
+int child_monitor(pid_t pid);
 
 #endif
