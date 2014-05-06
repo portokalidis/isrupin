@@ -7,6 +7,7 @@
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/user.h>
 
 #include "monitor.h"
 #include "child.h"
@@ -16,10 +17,6 @@
 #define MSG_HEADER "<ActionMessageType>\n"
 //! Message footer
 #define MSG_FOOTER  "</ActionMessageType>\n"
-//! Page size (4096)
-#define PAGE_SIZE (4096)
-//! Page mask
-#define PAGE_MASK (PAGE_SIZE-1)
 
 
 /**
@@ -103,11 +100,9 @@ static void minestrone_write_action(int cwe, const char *behavior,
 		LOG_MESSAGE("<cwe>CWE-%d</cwe>\n", cwe);
 		LOG_MESSAGE("</weakness>\n");
 	}
-	if (impact) {
-		LOG_MESSAGE("<impact>\n");
-		LOG_MESSAGE("<effect>%s</effect>\n", impact);
-		LOG_MESSAGE("</impact>\n");
-	}
+	LOG_MESSAGE("<impact>\n");
+	LOG_MESSAGE("<effect>%s</effect>\n", impact);
+	LOG_MESSAGE("</impact>\n");
 	LOG_MESSAGE("</action>\n");
 }
 
@@ -120,7 +115,7 @@ static int analyze_access_error(pid_t pid, siginfo_t *info)
 {
 	long val, magic;
 	// Aligning fault address to page boundary
-	long addr = (long)info->si_addr & ~PAGE_MASK;
+	long addr = (long)info->si_addr & PAGE_MASK;
 	long start, end;
 
 #ifdef MONITOR_DEBUG
@@ -153,7 +148,7 @@ static int analyze_access_error(pid_t pid, siginfo_t *info)
 			return 0;
 	}
 
-	minestrone_write_action(100, "CONTROLLED_EXIT", NULL);
+	minestrone_write_action(119, "CONTROLLED_EXIT", "UNEXPECTED_STATE");
 	return 1;
 }
 
