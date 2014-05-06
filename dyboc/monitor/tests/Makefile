@@ -1,7 +1,6 @@
 CFLAGS=-O0 -Wall -Werror
 DFLAGS=-DMONITOR_DEBUG -DNDEBUG
 
-#TESTS=fork exec 
 TEST_OVERFLOW=simple_over fork_over
 TEST_UNDERFLOW=simple_under fork_under
 
