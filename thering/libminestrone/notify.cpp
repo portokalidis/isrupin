@@ -11,18 +11,6 @@
 
 
 /**
- * Append test case entries in string stream
- *
- * @param ss	Reference to string stream
- */
-static void append_tc(stringstream &ss)
-{
-	ss << "\t<test_case>" << original_name.Value() << 
-		"</test_case>" << endl;
-	ss << "\t<ref_id>" << ref_id.Value() << "</ref_id>" << endl;
-}
-
-/**
  * Issue notification in pintool log file, and std err if we have been
  * configured this way.
  *
@@ -38,8 +26,6 @@ static inline void notify(const string &str)
 	}
 }
 
-
-
 /**
  * Return minestrone message for execution status.
  *
@@ -53,25 +39,24 @@ string minestrone_status_message(exis_status_t status, INT32 code)
 	stringstream ss;
 
 	// Execute status
-	ss << "<return_status_message>" << endl;
-	ss << "\t<message_type>execute_status" << "</message_type>" << endl;
-	append_tc(ss);
 	switch (status) {
 	case ES_SUCCESS:
-		ss << "\t<status>success</status>" << endl;
-		ss << "\t<status_code>" << code << "</status_code>" << endl;
+		ss << "<status>SUCCESS</status>" << endl;
 		break;
 
 	case ES_TIMEOUT:
-		ss << "\t<status>timeout</status>" << endl;
+		ss << "<status>TIMEOUT</status>" << endl;
 		break;
 
 	case ES_SKIP:
-		ss << "\t<status>skip</status>" << endl;
+		ss << "<status>SKIP</status>" << endl;
 		break;
 
+	case ES_OTHER:
+		ss << "<status>OTHER</status>" << endl;
+		break;
 	}
-	ss << "</return_status_message>" << endl;
+	ss << "<return_code>" << code << "</return_code>" << endl;
 
 	return ss.str();
 }
@@ -93,32 +78,33 @@ void minestrone_log_status(exis_status_t status, INT32 code)
  *
  * @param cwe		CWE number of detected vulnerability.
  * 			0 if not CWE was detected
+ * @param behavior	String describing the beahvior of the event
  * @param impact	String describing the impact of the event
  *
  * @return string containing message
  */
-string minestrone_message(UINT32 cwe, const char *impact)
+string minestrone_message(UINT32 cwe, const char *behavior, const char *impact)
 {
 	stringstream ss;
 
 	// XML version
-	ss << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" << endl;
+	//ss << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" << endl;
+
+	ss << "<action>" << endl;
+	ss << "<behavior>" << behavior << "</behavior>" << endl;
 
 	// Report CWE, if specified
         if (cwe > 0) {
-                ss << "<structured_message>" << endl;
-                ss << "\t<message_type>found_cwe</message_type>" << endl;
-		append_tc(ss);
-                ss << "\t<cwe_entry_id>" << cwe << "</cwe_entry_id>" << endl;
-                ss << "</structured_message>" << endl;
+		ss << "<weakness>" << endl <<
+			"<cwe>" << cwe << "</cwe>" << endl <<
+			"</weakness>" << endl;
         }
 
-	// Report technical_impact
-        ss << "<structured_message>" << endl;
-        ss << "\t<message_type>technical_impact" << "</message_type>" << endl;
-        ss << "\t<impact>" << impact << "</impact>" << endl;
-	append_tc(ss);
-        ss << "</structured_message>" << endl;
+	ss << "<impact>" << endl <<
+		"<effect>" << impact << "</effect>" << endl <<
+		"</impact>" << endl;
+
+	ss << "</action>" << endl;
 
 	return ss.str();
 }
@@ -129,12 +115,13 @@ string minestrone_message(UINT32 cwe, const char *impact)
  *
  * @param cwe		CWE number of detected vulnerability.
  * 			0 if not CWE was detected
+ * @param behavior	String describing the beahvior of the event
  * @param impact	String describing the impact of the event
  */
-void minestrone_notify(UINT32 cwe, const char *impact)
+void minestrone_notify(UINT32 cwe, const char *behavior, const char *impact)
 {
 	// Finally log everything
-	notify(minestrone_message(cwe, impact));
+	notify(minestrone_message(cwe, behavior, impact));
 }
 
 /**

@@ -12,14 +12,15 @@
 
 
 //! Exit status enum for reporting minestrone style
-typedef enum EXIT_STATUS_ENUM { ES_SUCCESS, ES_TIMEOUT, ES_SKIP } exis_status_t;
+typedef enum EXIT_STATUS_ENUM { ES_SUCCESS = 0, ES_TIMEOUT, 
+	ES_SKIP, ES_OTHER } exis_status_t;
 
 extern KNOB<unsigned long> exec_timeout;
 
 
-string minestrone_message(UINT32 cwe, const char *impact);
+string minestrone_message(UINT32 cwe, const char *behavior, const char *impact);
 
-void minestrone_notify(UINT32 cwe, const char *impact);
+void minestrone_notify(UINT32 cwe, const char *behavior, const char *impact);
 
 void minestrone_fini_success(INT32 code, void *v);
 

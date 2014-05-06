@@ -164,7 +164,8 @@ static void dta_flow_altered(THREADID tid, const CONTEXT *ctx, ADDRINT bt)
  * @return TRUE if the fault was handled, exit otherwise
  */
 static BOOL fault_handler(THREADID tid, CONTEXT *ctx, 
-		const EXCEPTION_INFO *einfo, bool internal = false)
+		const EXCEPTION_INFO *einfo, bool internal = false,
+		bool code_injection = false, bool alter_flow = false)
 {
 #ifdef USE_REASSURE
 	if (reassure.Value()) {
@@ -175,7 +176,8 @@ static BOOL fault_handler(THREADID tid, CONTEXT *ctx,
 # ifdef MINESTRONE
 			if (reassure_exception_nullpointer(einfo)) {
 				// CWE-476 NULL Pointer Dereference
-				minestrone_notify(CWE_NULLPOINTER, 
+				minestrone_notify(CWE_NULLPOINTER,
+						"CONTINUED_EXECUTION",
 						"DOS_INSTABILITY");
 			}
 # endif
@@ -184,12 +186,6 @@ static BOOL fault_handler(THREADID tid, CONTEXT *ctx,
 			return TRUE;
 		}
 	}
-#endif
-
-#ifdef MINESTRONE
-	minestrone_notify(0, "DOS_INSTABILITY");
-	minestrone_log_status(ES_SUCCESS, EXIT_SUCCESS);         
-        PIN_ExitProcess(EXIT_SUCCESS);
 #endif
 	return FALSE;
 }
@@ -227,11 +223,6 @@ static BOOL signal_handler(THREADID tid, INT32 sig, CONTEXT *ctx,
 			code_injection = libisr_code_injection(sig, ctx, einfo);
 			if (code_injection) {
 				OUTLOG("!!!Code-injection detected!!!\n");
-
-				// CWE-94 Failure to Control Generation of Code
-				minestrone_notify(CWE_CI, 
-						"EXECUTE_UNAUTHORIZED_CODE");
-
 				if (isr_cidebug.Value()) {
 					DBGLOG(" Pausing execution!\n");
 					pause();
@@ -244,9 +235,6 @@ static BOOL signal_handler(THREADID tid, INT32 sig, CONTEXT *ctx,
 			if (dta_alert_issued) {
 				OUTLOG("!!!Control-flow alteration "
 						"detected!!!\n");
-				// CWE-691 Insufficient Control Flow Management
-				minestrone_notify(CWE_CF, 
-						"ALTER_EXECUTION_LOGIC");
 				dta_alert_issued = FALSE;
 				hijacking = true;
 			}
@@ -254,13 +242,25 @@ static BOOL signal_handler(THREADID tid, INT32 sig, CONTEXT *ctx,
 #endif
 	}
 
-	if (fault_handler(tid, ctx, einfo))
+	if (fault_handler(tid, ctx, einfo, false, code_injection, hijacking))
 		return FALSE; // Supress signal
 
+#ifdef MINESTRONE
 	if (hijacking || code_injection) {
 		OUTLOG("!!!Exiting to safety!!!\n");
+		if (hijacking) {
+			// CWE-691 Insufficient Control Flow Management
+			minestrone_notify(CWE_CF, "CONTROLLED_EXIT",
+					"ALTER_EXECUTION_LOGIC");
+		} else {
+			// CWE-94 Failure to Control Generation of Code
+			minestrone_notify(CWE_CI, "CONTROLLED_EXIT",
+					"EXECUTE_UNAUTHORIZED_CODE");
+		}
+		minestrone_log_status(ES_SUCCESS, EXIT_SUCCESS);         
 		PIN_ExitProcess(EXIT_FAILURE);
 	}
+#endif
         return TRUE;
 }
 
