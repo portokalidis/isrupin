@@ -40,74 +40,75 @@
 #endif
 
 
-//! Flag determining if an action message has already been issued
-static int minestrone_write_action_issued = 0;
-
 //! Last exit code by monitored processes
 static int last_exit_status = EXIT_SUCCESS;
 
 
-static void minestrone_write_return_code(int code)
+/*
+ * Return code
+ */
+static inline void minestrone_write_return_code(int code)
 {
 	LOG_MESSAGE("<return_code>%d</return_code>\n", code);
 }
 
-static void minestrone_write_status(status_type_t status)
+/*
+ Possible status codes:
+  <xs:enumeration value="SUCCESS"/>
+  <xs:enumeration value="SKIP"/>
+  <xs:enumeration value="TIMEOUT"/>
+  <xs:enumeration value="OTHER"/>
+*/
+static inline void minestrone_write_status(const char *status)
 {
-	switch (status) {
-	case STATUS_SUCCESS:
-		LOG_MESSAGE("<status>SUCCESS</status>\n");
-		break;
-
-	case STATUS_OTHER:
-		LOG_MESSAGE("<status>OTHER</status>\n");
-		break;
-
-	case STATUS_TIMEOUT:
-		LOG_MESSAGE("<status>TIMEOUT</status>\n");
-		break;
-
-	case STATUS_SKIP:
-		LOG_MESSAGE("<status>SKIP</status>\n");
-		break;
-	}
+	LOG_MESSAGE("<status>%s</status>\n", status);
 }
 
-static void minestrone_write_action(actionmsg_type_t msgtype)
+/*
+ CWE code 
+
+ Possible behavior values:
+  <xs:enumeration value="NONE"/>
+  <xs:enumeration value="CONTROLLED_EXIT"/>
+  <xs:enumeration value="CONTINUED_EXECUTION"/>
+  <xs:enumeration value="OTHER"/>
+
+
+ Possible impact values:
+   <xs:enumeration value="NONE"/>
+   <xs:enumeration value="UNSPECIFIED"/>
+   <xs:enumeration value="READ_FILE"/>
+   <xs:enumeration value="READ_APPLICATION_DATA"/>
+   <xs:enumeration value="GAIN_PRIVILEGES"/>
+   <xs:enumeration value="HIDE_ACTIVITIES"/>
+   <xs:enumeration value="EXECUTE_UNAUTHORIZED_CODE"/>
+   <xs:enumeration value="MODIFY_FILES"/>
+   <xs:enumeration value="MODIFY_APPLICATION_DATA"/>
+   <xs:enumeration value="BYPASS_PROTECTION_MECHANISM"/>
+   <xs:enumeration value="ALTER_EXECUTION_LOGIC"/>
+   <xs:enumeration value="UNEXPECTED_STATE"/>
+   <xs:enumeration value="DOS_UNCONTROLLED_EXIT"/>
+   <xs:enumeration value="DOS_AMPLIFICATION"/>
+   <xs:enumeration value="DOS_INSTABILITY"/>
+   <xs:enumeration value="DOS_BLOCKING"/>
+   <xs:enumeration value="DOS_RESOURCE_CONSUMPTION"/>
+*/
+static void minestrone_write_action(int cwe, const char *behavior, 
+		const char *impact)
 {
-	if (minestrone_write_action_issued)
-		return;
-
 	LOG_MESSAGE("<action>\n");
-
-	LOG_MESSAGE("<behavior>");
-	switch (msgtype) {
-	case ACTIONMSG_NONE:
-		LOG_MESSAGE("NONE");
-		break;
-
-	case ACTIONMSG_CONTROLLED_EXIT:
-		LOG_MESSAGE("CONTROLLED_EXIT");
-		break;
-
-	case ACTIONMSG_CONTINUED_EXECUTION:
-		LOG_MESSAGE("CONTINUED_EXECUTION");
-		break;
-	
-	case ACTIONMSG_OTHER:
-		LOG_MESSAGE("OTHER");
-		break;
-
-	default:
-		abort();
+	LOG_MESSAGE("<behavior>%s</behavior>\n", behavior);
+	if (cwe > 0) {
+		LOG_MESSAGE("<weakness>\n");
+		LOG_MESSAGE("<cwe>CWE-%d</cwe>\n", cwe);
+		LOG_MESSAGE("</weakness>\n");
 	}
-	LOG_MESSAGE("</behavior>\n");
-
-	// XXX: Also weakness, impact, additional_information
-
+	if (impact) {
+		LOG_MESSAGE("<impact>\n");
+		LOG_MESSAGE("<effect>%s</effect>\n", impact);
+		LOG_MESSAGE("</impact>\n");
+	}
 	LOG_MESSAGE("</action>\n");
-
-	minestrone_write_action_issued = 1;
 }
 
 /**
@@ -152,7 +153,7 @@ static int analyze_access_error(pid_t pid, siginfo_t *info)
 			return 0;
 	}
 
-	minestrone_write_action(ACTIONMSG_CONTROLLED_EXIT);
+	minestrone_write_action(100, "CONTROLLED_EXIT", NULL);
 	return 1;
 }
 
@@ -283,9 +284,9 @@ int child_monitor()
 	if (errno != ECHILD) {
 		perror("child_monitor");
 		r = -1;
-		minestrone_write_status(STATUS_OTHER);
+		minestrone_write_status("OTHER");
 	} else {
-		minestrone_write_status(STATUS_SUCCESS);
+		minestrone_write_status("SUCCESS");
 	}
 	return r;
 }
