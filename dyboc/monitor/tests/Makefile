@@ -19,4 +19,4 @@ $(TEST_OVERFLOW): %: %.o overflow.o
 	$(CC) $(CFLAGS) -c $<
 
 clean:
-	rm -f $(TESTS) *.o
+	rm -f $(TEST_OVERFLOW) $(TEST_UNDERFLOW) *.o
