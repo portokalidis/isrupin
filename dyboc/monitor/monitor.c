@@ -6,7 +6,7 @@
 #include "child.h"
 
 //! getopt command-line options
-#define CMDLINE_OPTIONS "ho:r:n:e"
+#define CMDLINE_OPTIONS "ho:e"
 //! Default output log
 #define DEFAULT_LOG_FILENAME "dyboc.log"
 
@@ -14,14 +14,16 @@
 //! Log information to stderr as well
 int log_stderr = 0;
 
+//! Log file
+FILE *log_fp = NULL;
+
+#if 0
 //! Target program name (minestrone)
 char *target_name = NULL;
 
 //! Target program id (minestrone)
 char *target_id = NULL;
-
-//! Log file
-FILE *log_fp = NULL;
+#endif
 
 
 //! Filename to store logging information
@@ -81,11 +83,9 @@ static void print_usage(int argc, char **argv)
 {
 	printf("Usage: %s [options] -- <program name> [program arguments]"
 			" ...\n", argv[0]);
-	printf("\t-help           Print this message\n");
+	printf("\t-h              Print this message\n");
 	printf("\t-o <filename>   Write log messages to <filename>. "
 			"Default %s\n", DEFAULT_LOG_FILENAME);
-	printf("\t-n <name>       Set test case name to <name>\n");
-	printf("\t-r <id>         Set test case reference ID to <id>\n");
 	printf("\t-e              Write notifications to stderr as well as "
 			"stdout\n");
 }
@@ -111,15 +111,17 @@ static int parse_arguments(int argc, char **argv)
 		case 'o':
 			log_filename = optarg;
 			break;
+		case 'e':
+			log_stderr = 1;
+			break;
+#if 0
 		case 'n':
 			target_name = optarg;
 			break;
 		case 'r':
 			target_id = optarg;
 			break;
-		case 'e':
-			log_stderr = 1;
-			break;
+#endif
 		default:
 			print_usage(argc, argv);
 			exit(EXIT_FAILURE);
@@ -152,8 +154,5 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	if (execute_program(target_cmdline_idx, argv) != 0)
-		return EXIT_FAILURE;
-
-	return EXIT_SUCCESS;
+	return execute_program(target_cmdline_idx, argv);
 }

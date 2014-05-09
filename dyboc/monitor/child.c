@@ -318,6 +318,7 @@ int child_monitor(pid_t pid)
 		minestrone_write_status("OTHER");
 	} else {
 		minestrone_write_status("SUCCESS");
+		r = last_exit_status;
 	}
 	return r;
 }
