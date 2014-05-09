@@ -177,8 +177,16 @@ static int process_signal(pid_t pid, int signo)
 		break;
 
 	case SIGSEGV:
-		/* Process below */
+		signo = SIGKILL; // Make sure it dies
 		break;
+
+	case SIGABRT:
+	case SIGBUS:
+	case SIGFPE:
+	case SIGILL:
+		minestrone_write_action(0, 
+				"CONTROLLED_EXIT", "DOS_INSTABILITY");
+		return SIGKILL; // Make sure it dies
 
 	default:
 		return signo;
@@ -202,8 +210,15 @@ static int process_signal(pid_t pid, int signo)
 	return signo;
 }
 
+/** Set when the first process executes to set ptrace options */
 static int first_process = 0;
 
+/**
+ * Set ptrace options for the first traced process. The children inherit the
+ * options.
+ *
+ * @param pid Process pid
+ */
 static inline void set_ptrace_options(pid_t pid)
 {
 	long options;
