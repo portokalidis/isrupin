@@ -1,5 +1,6 @@
 cmake_minimum_required (VERSION 2.6)
 set(CMAKE_VERBOSE_MAKEFILE on)
+project(thering)
 
 option(USE_ISR "Enable ISR module" ON)
 option(USE_REASSURE "Enable REASSURE module" ON)
@@ -9,12 +10,18 @@ option(BLOCKINGRP "REASSURE supports blocking rescue points" ON)
 option(DEBUG "Enable debugging" OFF)
 option(MINESTRONE "Use minestrone-style reporting and watchdog" OFF)
 
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG -O0")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
-
+# Build type
 if (DEBUG)
-	set (CMAKE_BUILD_TYPE Debug)
+	set(CMAKE_BUILD_TYPE Debug)
+	add_definitions(-DDEBUG)
+else ()
+	set(CMAKE_BUILD_TYPE Release)
 endif ()
+
+
+# Add default debug CXXFLAGS
+#set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG -O0")
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
 
 add_definitions(-Wall -Wextra -Wno-unused-parameter -Wno-unused-result -Werror)
 
@@ -46,7 +53,7 @@ endif ()
 if (USE_ISR)
 	set(libisr_DIR ${CMAKE_SOURCE_DIR}/libisr)
 	add_subdirectory(libisr)
-	add_subdirectory(sqlite)
+	add_subdirectory(sqlite3)
 	add_subdirectory(exec_wrapper)
 	if (CMAKE_SIZEOF_VOID_P MATCHES 8)
 		option(ISOLATION "Isolate memory with ISR" OFF)

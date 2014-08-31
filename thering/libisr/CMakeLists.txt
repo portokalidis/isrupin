@@ -18,6 +18,6 @@ add_definitions(${PIN_CXXFLAGS})
 include_directories(${PIN_INCLUDES})
 
 # libisr specific
-set(SOURCES libisr.cpp image.cpp ../sqlite/sqlite3.c)
-include_directories(../include ../sqlite)
+set(SOURCES libisr.cpp image.cpp ../sqlite3/sqlite3.c)
+include_directories(../include ../sqlite3)
 add_library(isr STATIC ${SOURCES})
