@@ -2,9 +2,6 @@
 cmake_minimum_required (VERSION 2.6)
 set(CMAKE_VERBOSE_MAKEFILE on)
 
-# Project
-project (libreassure)
-
 if (SAFECOPY_RESTORE)
 	add_definitions(-DSAFECOPY_RESTORE)
 endif ()
@@ -14,13 +11,11 @@ if (BLOCKINGRP)
 endif ()
 
 # PIN
-set(Pin_DIR ..)
 find_package(Pin)
 add_definitions(${PIN_CXXFLAGS})
 include_directories(${PIN_INCLUDES})
 
 # libcrossdev
-set(libcrossdev_DIR ../libcrossdev)
 find_package(libcrossdev)
 include_directories(${LIBCROSSDEV_INCLUDE_DIRS})
 

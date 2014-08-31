@@ -1,5 +1,4 @@
 cmake_minimum_required (VERSION 2.6)
-project (libcrossdev)
 set(CMAKE_VERBOSE_MAKEFILE on)
 
 # PIN

@@ -2,11 +2,7 @@
 cmake_minimum_required (VERSION 2.6)
 set(CMAKE_VERBOSE_MAKEFILE on)
 
-# Project
-project (libdft)
-
 # PIN
-set(Pin_DIR ..)
 find_package(Pin)
 add_definitions(${PIN_CXXFLAGS})
 include_directories(${PIN_INCLUDES})

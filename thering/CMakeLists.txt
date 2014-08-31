@@ -18,10 +18,10 @@ else ()
 	set(CMAKE_BUILD_TYPE Release)
 endif ()
 
-
-# Add default debug CXXFLAGS
-#set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG -O0")
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+set(Pin_DIR ${CMAKE_SOURCE_DIR})
+set(libcrossdev_DIR ${CMAKE_SOURCE_DIR}/libcrossdev)
+set(libsqlite3_DIR ${CMAKE_SOURCE_DIR}/sqlite3)
+set(libminestrone_DIR ${CMAKE_SOURCE_DIR}/libminestrone)
 
 add_definitions(-Wall -Wextra -Wno-unused-parameter -Wno-unused-result -Werror)
 
@@ -61,6 +61,7 @@ if (USE_ISR)
 		option(ISOLATION "Isolate memory with ISR" ON)
 	endif ()
 endif ()
+
 
 add_subdirectory(libcrossdev)
 add_subdirectory(tools)

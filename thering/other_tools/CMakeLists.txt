@@ -1,7 +1,5 @@
 cmake_minimum_required (VERSION 2.6)
-project (tools)
 set(CMAKE_VERBOSE_MAKEFILE on)
-
 
 # Modules to use
 # PIN

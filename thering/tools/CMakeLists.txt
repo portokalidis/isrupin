@@ -1,5 +1,4 @@
 cmake_minimum_required (VERSION 2.6)
-project (tools)
 set(CMAKE_VERBOSE_MAKEFILE on)
 
 set(SOURCES thering.cpp)
@@ -7,10 +6,11 @@ set(SOURCES thering.cpp)
 # libisr
 if (USE_ISR)
 	find_package(libisr)
+	find_package(libsqlite3)
+	find_package(Threads)
 	add_definitions(-DUSE_ISR ${LIBISR_DEFINITIONS})
 	include_directories(${LIBISR_INCLUDE_DIRS})
 	link_directories(${LIBISR_LIBRARY_DIRS})
-	find_package(Threads)
 endif ()
 
 # libreassure
@@ -33,7 +33,6 @@ endif ()
 
 # libcrossdev
 if (NEEDS_LIBXDEV)
-	set(libcrossdev_DIR ../libcrossdev)
 	find_package(libcrossdev)
 	add_definitions(${LIBCROSSDEV_DEFINITIONS})
 	include_directories(${LIBCROSSDEV_INCLUDE_DIRS})
@@ -41,7 +40,6 @@ if (NEEDS_LIBXDEV)
 endif ()
 
 if (MINESTRONE)
-	set(libminestrone_DIR ../libminestrone)
 	find_package(libminestrone)
 	add_definitions(${LIBMINESTRONE_DEFINITIONS})
 	include_directories(${LIBMINESTRONE_INCLUDE_DIRS})
@@ -49,7 +47,6 @@ if (MINESTRONE)
 endif ()
 
 # PIN
-set(Pin_DIR ..)
 find_package(Pin)
 add_definitions(${PIN_CXXFLAGS})
 include_directories(${PIN_INCLUDES})
@@ -64,10 +61,12 @@ include_directories(../include)
 
 # The name of the main pin tool should be no more characters than
 # the wrapper tool to easily replace it in the command line
+# We have all the sources here!
 add_library(thering SHARED ${SOURCES})
 set_target_properties(thering PROPERTIES PREFIX "") # drop 'lib' prefix
-target_link_libraries(thering ${LIBISR_LIBRARIES})
-target_link_libraries(thering ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(thering ${LIBISR_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT}
+					${LIBSQLITE3_LIBRARIES})
+#target_link_libraries(thering ${CMAKE_THREAD_LIBS_INIT})
 target_link_libraries(thering ${LIBREASSURE_LIBRARIES})
 target_link_libraries(thering ${LIBDFT_LIBRARIES})
 target_link_libraries(thering ${LIBCROSSDEV_LIBRARIES})
