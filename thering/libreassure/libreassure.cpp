@@ -925,28 +925,28 @@ static VOID ForkWritesHandler(INS ins, UINT32 width)
 static int WLogComputeEntries(UINT32 width)
 {
 	int slot;
-	UINT32 b;
-	unsigned int mul;
+	UINT32 w;
 
 	// Writing less than 8 bits is not possible
 	assert((width & 0x7) == 0);
 
 	// The width's bits can help us calculate on how many entries we need.
 	// 8, 16, 32, 64, 128, 256 (max 504 bits) take a slot each
-	for (slot = 0, b = 8; width && b <= 256; b <<= 1) {
-		if (width & b) { // A slot for this size
-			slot++;
-			width &= ~b; // Clean the bit
-		}
+	for (slot = 0; width & 0x1ff; slot++) {
+		// clear the least significant bit set
+		width &= width - 1;
 	}
 
 	// 512 bits or longer widths require many max size slots
 	// Limit to WLOG_BLOCK_SIZE_MIN slots
-	for (mul = 2; width && slot < WLOG_BLOCK_SIZE_MIN; b <<= 1, mul <<= 2) {
-		if (width & b) { // mul slots for this size
-			slot += mul;
-			width &= ~b; // Clean the bit
-		}
+	while (width && slot < WLOG_BLOCK_SIZE_MIN) {
+		// clear the least significant bit set and assign to w
+		w = width & (width - 1);
+
+		// How many slots to store this many bits
+		slot += (w ^ width) >> 8;
+
+		width = w;
 	}
 
 	if (slot < WLOG_BLOCK_SIZE_MIN)
@@ -1104,35 +1104,58 @@ static inline void WLogWriteSingle(INS ins, UINT32 width)
 #endif
 }
 
-
-
+/**
+ * Instrument long writes.
+ *
+ * @param ins	  Pin instruction.
+ * @param width	  Width of data to be saved.
+ * @param entries Number entries that the write will take.
+ */
 static void WLogWriteLong(INS ins, UINT32 width, UINT32 entries)
 {
-	UINT32 b, off, e = 0;
+	UINT32 w, bits, slots, off;
 
 	// Writing less than 8 bits is not possible
 	assert((width & 0x7) == 0);
 
 	// The width's bits can help us calculate on how many entries we need.
 	// 8, 16, 32, 64, 128, 256 (max 504 bits) take a slot each
-	for (off = 0, b = 8; width && b <= 256; b <<= 1) {
-		if (width & b) { // A slot for this size
-			width &= ~b; // Clean the bit
-			DBGLOG("WLogWriteLong " + decstr(b) + "\n");
-			WLogWritePartial(ins, b, off);
-			e++;
-			off += b;
+	for (off = 0; width & 0x1ff; entries--) {
+		// clear the least significant bit set and assign to w
+		w = width & (width - 1);
+
+		bits = w ^ width;
+
+#ifdef WLOG_DEBUG
+		DBGLOG("WLogWriteLong " + decstr(bits) + 
+				"@" + decstr(off) + "\n");
+#endif
+		WLogWritePartial(ins, bits, off);
+
+		off += bits;
+		width = w;
+	}
+
+	// 512 bits or longer widths require many max size slots
+	// Limit to WLOG_BLOCK_SIZE_MIN slots
+	while (width) {
+		// clear the least significant bit set and assign to w
+		w = width & (width - 1);
+
+		// How many slots to store this many bits
+		
+		for (slots = (w ^ width) >> 8; slots--; entries--, off += 256) {
+#ifdef WLOG_DEBUG
+			DBGLOG("WLogWriteLong 256@" + decstr(off) + "\n");
+#endif
+			WLogWritePartial(ins, 256, off);
 		}
+
+		width = w;
 	}
 
-	for (; width >= 256; width -= 256, off += 256) {
-		DBGLOG("WLogWriteLong 256\n");
-		WLogWritePartial(ins, 256, off);
-		e++;
-	}
-	assert(e == entries);
+	assert(entries == 0);
 }
-
 
 // Handle memory writes when a writes log is used for checkpointing
 static VOID WLogWritesHandler(INS ins, UINT32 width) 
@@ -1147,8 +1170,10 @@ static VOID WLogWritesHandler(INS ins, UINT32 width)
 	if (entries == 1) {
 		WLogWritePartial(ins, width, 0);
 	} else {
+#ifdef WLOG_DEBUG
 		DBGLOG("Long write! Width=" + decstr(width) + 
 				" entries=" + decstr(entries) + ".\n");
+#endif
 		WLogWriteLong(ins, width, entries);
 	}
 }

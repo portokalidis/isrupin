@@ -14,7 +14,7 @@
 //#define CHECKPOINT_DEBUG
 //#define SYSEXIT_DECODE
 
-#define WLOG_DEBUG
+//#define WLOG_DEBUG
 //#define WLOG_DEBUG_EXTENDED
 
 //#define FLOG_DEBUG
