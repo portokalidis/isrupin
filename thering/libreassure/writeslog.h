@@ -71,6 +71,11 @@ static inline bool WLogIsFull(const struct writeslog *wlog)
 	return (wlog->idx >= wlog->end);
 }
 
+static inline bool WLogFits(const struct writeslog *wlog, UINT32 entries)
+{
+	return ((wlog->idx + entries) > wlog->end);
+}
+
 static inline void WLogSegFree(wlog_seg_t *seg)
 {
 	operator delete(seg);
@@ -82,8 +87,8 @@ static inline void WLogSegAlloc(struct writeslog *wlog, UINT32 sz)
 	wlog_seg_t *seg;
 
 #ifdef WLOG_DEBUG
-	ss << "Allocating new writes log segment of size " << sz << endl;
-	DBGLOG(ss);
+	DBGLOG("Allocating new writes log segment of size " + 
+			decstr(sz) + "\n");
 #endif
 
 	seg = (wlog_seg_t *)operator new(sizeof(wlog_seg_t) + 
@@ -98,9 +103,8 @@ static inline void WLogSegAlloc(struct writeslog *wlog, UINT32 sz)
 	wlog->end = seg->start + sz;
 
 #ifdef WLOG_DEBUG
-	ss << "Segment at " << (void *)seg->start << " to " << 
-		(void *)wlog->end <<  endl;
-	DBGLOG(ss);
+	DBGLOG("Segment at " + hexstr(seg->start) + " to " + 
+			hexstr(wlog->end) + "\n");
 #endif
 }
 
@@ -152,9 +156,9 @@ do {\
 #define WLOG_WRITE(wlog, addr, val, len, umember)\
 	do {\
 		wlog_entry_t *ent;\
-		WLOGWRITE_COMMON(ent, wlog, len, addr);\
-		ent->data.umember = val;\
-		WLOG_DEBUG_DATA(addr, 4, val);\
+		WLOGWRITE_COMMON(ent, wlog, (len), (addr));\
+		ent->data.umember = (val);\
+		WLOG_DEBUG_DATA((addr), 4, (val));\
 	} while (0)
 
 
@@ -165,8 +169,8 @@ do {\
 #define WLOG_WRITE_COPY(wlog, addr, len, umember)\
 	do {\
 		wlog_entry_t *ent;\
-		WLOGWRITE_COMMON(ent, wlog, len, addr);\
-		memcpy(ent->data.umember, (void *)addr, len);\
+		WLOGWRITE_COMMON(ent, wlog, (len), (addr));\
+		memcpy(ent->data.umember, (void *)(addr), (len));\
 	} while (0)
 
 

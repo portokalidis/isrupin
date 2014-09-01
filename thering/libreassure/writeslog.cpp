@@ -34,9 +34,7 @@ void WLogFree(struct writeslog *wlog)
 	delete wlog;
 
 #ifdef WLOG_DEBUG
-	stringstream ss;
-	ss << "Freeing writes log of " << segs << " segments" << endl;
-	DBGLOG(ss);
+	DBGLOG("Freeing writes log of " + decstr(segs) + " segments\n");
 #endif
 }
 
@@ -61,10 +59,8 @@ struct writeslog *WLogAlloc(UINT32 hint)
 	memset(wlog->cache, 0, CACHE_BUCKETS * sizeof(cache_entry_t));
 
 #ifdef WLOG_DEBUG
-	stringstream ss;
-	ss << "Allocating writes log of size " << wlog->size << " at " <<
-		(void *)wlog << endl;
-	DBGLOG(ss);
+	DBGLOG("Allocating writes log of size " + decstr(wlog->size) + 
+			" at " + hexstr(wlog) + "\n");
 #endif
 
 	return wlog;

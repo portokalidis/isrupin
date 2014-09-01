@@ -388,9 +388,10 @@ FORKMARK(QQ, 32)
 
 /* Analysis routines for write log that store overwritten memory contents */
 
-static ADDRINT PIN_FAST_ANALYSIS_CALL LogNeedsExpansion(struct thread_state *ts)
+static ADDRINT PIN_FAST_ANALYSIS_CALL 
+LogNeedsExpansion(struct thread_state *ts, UINT32 entries)
 {
-	return WLogIsFull(ts->memcheckp.wlog);
+	return WLogFits(ts->memcheckp.wlog, entries);
 }
 
 static VOID LogExpand(struct thread_state *ts)
@@ -415,6 +416,23 @@ CHECKCACHE_FUNCTION(Q)
 CHECKCACHE_FUNCTION(DQ)
 CHECKCACHE_FUNCTION(QQ)
 
+/**
+ * Macro for defining CheckCacheOff functions.
+ */
+#define CHECKCACHEOFF_FUNCTION(suffix)\
+static ADDRINT PIN_FAST_ANALYSIS_CALL CheckCacheOff ## suffix \
+	(struct thread_state *ts, ADDRINT addr, UINT32 off) \
+{\
+	CACHE_ACCESSED();\
+	return WritesCacheCheck ## suffix \
+		(ts->memcheckp.wlog->cache, (addr) + (off));\
+}
+CHECKCACHEOFF_FUNCTION(B)
+CHECKCACHEOFF_FUNCTION(W)
+CHECKCACHEOFF_FUNCTION(L)
+CHECKCACHEOFF_FUNCTION(Q)
+CHECKCACHEOFF_FUNCTION(DQ)
+CHECKCACHEOFF_FUNCTION(QQ)
 
 /**
  * Generic macro for copying data to temporary variable
@@ -452,6 +470,25 @@ LOGWRITE_FUNCTION(L, 4, UINT32, dword)
 LOGWRITE_FUNCTION(Q, 8, UINT64, qword)
 
 /**
+ * Macro for defining LogWriteOff functions.
+ */
+#define LOGWRITEOFF_FUNCTION(suffix, len, type, umember) \
+static VOID PIN_FAST_ANALYSIS_CALL LogWriteOff ## suffix \
+	(struct thread_state *ts, ADDRINT addr, UINT32 off)\
+{\
+	type data;\
+	COPY_DATA(data, (addr) + (off), len, type);\
+	WLOG_WRITE(ts->memcheckp.wlog, (addr) + (off), data, len, umember);\
+	WRITESCACHE_UPDATE(ts->memcheckp.wlog->cache, (addr) + (off), len);\
+	CACHE_MISS();\
+}
+LOGWRITEOFF_FUNCTION(B, 1, UINT8, byte)
+LOGWRITEOFF_FUNCTION(W, 2, UINT16, word)
+LOGWRITEOFF_FUNCTION(L, 4, UINT32, dword)
+LOGWRITEOFF_FUNCTION(Q, 8, UINT64, qword)
+
+
+/**
  * Double quad-word writes use copy instead of direct assignment.
  */
 static VOID PIN_FAST_ANALYSIS_CALL LogWriteDQ(struct thread_state *ts, 
@@ -463,6 +500,17 @@ static VOID PIN_FAST_ANALYSIS_CALL LogWriteDQ(struct thread_state *ts,
 }
 
 /**
+ * Double quad-word writes use copy instead of direct assignment.
+ */
+static VOID PIN_FAST_ANALYSIS_CALL LogWriteOffDQ(struct thread_state *ts, 
+		ADDRINT addr, UINT32 off)
+{
+	WLOG_WRITE_COPY(ts->memcheckp.wlog, (addr + off), 16, dqword);
+	WRITESCACHE_UPDATE(ts->memcheckp.wlog->cache, addr + off, 16);
+	CACHE_MISS();
+}
+
+/**
  * Quad quad-word writes use copy instead of direct assignment.
  */
 static VOID PIN_FAST_ANALYSIS_CALL LogWriteQQ(struct thread_state *ts, 
@@ -470,6 +518,17 @@ static VOID PIN_FAST_ANALYSIS_CALL LogWriteQQ(struct thread_state *ts,
 {
 	WLOG_WRITE_COPY(ts->memcheckp.wlog, addr, 32, qqword);
 	WRITESCACHE_UPDATE(ts->memcheckp.wlog->cache, addr, 32);
+	CACHE_MISS();
+}
+
+/**
+ * Quad quad-word writes use copy instead of direct assignment.
+ */
+static VOID PIN_FAST_ANALYSIS_CALL LogWriteOffQQ(struct thread_state *ts, 
+		ADDRINT addr, UINT32 off)
+{
+	WLOG_WRITE_COPY(ts->memcheckp.wlog, (addr + off), 32, qqword);
+	WRITESCACHE_UPDATE(ts->memcheckp.wlog->cache, addr + off, 32);
 	CACHE_MISS();
 }
 
@@ -714,7 +773,6 @@ static ADDRINT CheckpointReturn(struct thread_state *ts,
 ////////////////////////////////////////////////////
 
 #ifdef TARGET_LINUX
-
 #if FILTER_TYPE == FILTER_BITMAP
 /**
  * Instrument memory writes to update filter with the memory locations written
@@ -857,8 +915,141 @@ static VOID ForkWritesHandler(INS ins, UINT32 width)
 
 #endif // TARGET_LINUX
 
-// Handle memory writes when a writes log is used for checkpointing
-static VOID WLogWritesHandler(INS ins, UINT32 width) 
+/**
+ * Compute how many WLog entries are needed to store the target of a write
+ * of width bits
+ *
+ * @param width	The size of the write in bits.
+ * @return	The number of the entries needed, or -1 on error.
+ */
+static int WLogComputeEntries(UINT32 width)
+{
+	int slot;
+	UINT32 b;
+	unsigned int mul;
+
+	// Writing less than 8 bits is not possible
+	assert((width & 0x7) == 0);
+
+	// The width's bits can help us calculate on how many entries we need.
+	// 8, 16, 32, 64, 128, 256 (max 504 bits) take a slot each
+	for (slot = 0, b = 8; width && b <= 256; b <<= 1) {
+		if (width & b) { // A slot for this size
+			slot++;
+			width &= ~b; // Clean the bit
+		}
+	}
+
+	// 512 bits or longer widths require many max size slots
+	// Limit to WLOG_BLOCK_SIZE_MIN slots
+	for (mul = 2; width && slot < WLOG_BLOCK_SIZE_MIN; b <<= 1, mul <<= 2) {
+		if (width & b) { // mul slots for this size
+			slot += mul;
+			width &= ~b; // Clean the bit
+		}
+	}
+
+	if (slot < WLOG_BLOCK_SIZE_MIN)
+		return slot;
+
+	// Slot is too big
+	WARNLOG("Write width " + decstr(width) + " requires too many slots (" +
+			decstr(slot) + ") in the writes log\n");
+	return -1;
+}
+
+/**
+ * Check if the log needs to expand to accommodate multiple entries.
+ *
+ * @param ins	  Pin write instruction
+ * @param entries Number of entries required
+ */
+static inline void WLogExpand(INS ins, UINT32 entries)
+{
+	// Expand writes log if necessary
+        INS_InsertIfCall(ins, IPOINT_BEFORE, 
+                        (AFUNPTR)LogNeedsExpansion, IARG_FAST_ANALYSIS_CALL,
+                        IARG_REG_VALUE, tsreg, 
+			IARG_UINT32, entries,
+			IARG_END);
+        INS_InsertThenCall(ins, IPOINT_BEFORE, (AFUNPTR)LogExpand, 
+			IARG_REG_VALUE, tsreg, IARG_END);
+}
+
+/**
+ * Instrument a write to enter an entry in the writes log. Can only log a part
+ * of the write to support long writes.
+ *
+ * @param ins	Pin instruction
+ * @param width	Width of data to be saved
+ * @param off	Offset from effect address of the write to save
+ */
+static inline void WLogWritePartial(INS ins, UINT32 width, UINT32 off)
+{
+	AFUNPTR logwrite_fptr, checkwrite_fptr;
+	stringstream ss;
+
+	switch (width) {
+	case 8:
+		logwrite_fptr = (AFUNPTR)LogWriteOffB;
+		checkwrite_fptr = (AFUNPTR)CheckCacheOffB;
+		break;
+	case 16:
+		logwrite_fptr = (AFUNPTR)LogWriteOffW;
+		checkwrite_fptr = (AFUNPTR)CheckCacheOffW;
+		break;
+	case 32:
+		logwrite_fptr = (AFUNPTR)LogWriteOffL;
+		checkwrite_fptr = (AFUNPTR)CheckCacheOffL;
+		break;
+	case 64:
+		logwrite_fptr = (AFUNPTR)LogWriteOffQ;
+		checkwrite_fptr = (AFUNPTR)CheckCacheOffQ;
+		break;
+	case 128:
+		logwrite_fptr = (AFUNPTR)LogWriteOffDQ;
+		checkwrite_fptr = (AFUNPTR)CheckCacheOffDQ;
+		break;
+	case 256:
+		logwrite_fptr = (AFUNPTR)LogWriteOffQQ;
+		checkwrite_fptr = (AFUNPTR)CheckCacheOffQQ;
+		break;
+	default:
+		ERRLOG("Fatal did not expect write width " + decstr(width) +
+				"> 256 bits in a single WLog slot\n");
+		PIN_ExitProcess(1);
+		return;
+	}
+
+
+#if 1 // Check if we have logged this entry before using an associative cache
+	INS_InsertIfCall(ins, IPOINT_BEFORE, checkwrite_fptr,
+			IARG_FAST_ANALYSIS_CALL, IARG_REG_VALUE, tsreg, 
+			IARG_MEMORYWRITE_EA, 
+			IARG_UINT32, off,
+			IARG_END);
+	// Log it if necessary
+	INS_InsertThenCall(ins, IPOINT_BEFORE, logwrite_fptr,
+			IARG_FAST_ANALYSIS_CALL, IARG_REG_VALUE, tsreg, 
+			IARG_MEMORYWRITE_EA,
+			IARG_UINT32, off,
+			IARG_END);
+#else // Log everything
+	INS_InsertCall(ins, IPOINT_BEFORE, logwrite_fptr,
+			IARG_FAST_ANALYSIS_CALL, IARG_REG_VALUE, tsreg, 
+			IARG_MEMORYWRITE_EA,
+			IARG_UINT32, off,
+			IARG_END);
+#endif
+}
+
+/**
+ * Instrument a write to enter a single entry in the writes log. 
+ *
+ * @param ins	Pin instruction
+ * @param width	Width of data to be saved
+ */
+static inline void WLogWriteSingle(INS ins, UINT32 width)
 {
 	AFUNPTR logwrite_fptr, checkwrite_fptr;
 	stringstream ss;
@@ -889,33 +1080,77 @@ static VOID WLogWritesHandler(INS ins, UINT32 width)
 		checkwrite_fptr = (AFUNPTR)CheckCacheQQ;
 		break;
 	default:
-		ss << "[ERROR] reassure could not find width(" << width << 
-			") to write operand" << endl;
-		ERRLOG(ss);
+		ERRLOG("Fatal did not expect write width " + decstr(width) +
+				"> 256 bits in a single WLog slot\n");
 		PIN_ExitProcess(1);
 		return;
 	}
 
-	// Expand writes log if necessary
-        INS_InsertIfCall(ins, IPOINT_BEFORE, 
-                        (AFUNPTR)LogNeedsExpansion, IARG_FAST_ANALYSIS_CALL,
-                        IARG_REG_VALUE, tsreg, IARG_END);
-        INS_InsertThenCall(ins, IPOINT_BEFORE, (AFUNPTR)LogExpand, 
-			IARG_REG_VALUE, tsreg, IARG_END);
 
 #if 1 // Check if we have logged this entry before using an associative cache
 	INS_InsertIfCall(ins, IPOINT_BEFORE, checkwrite_fptr,
 			IARG_FAST_ANALYSIS_CALL, IARG_REG_VALUE, tsreg, 
-			IARG_MEMORYWRITE_EA, IARG_END);
+			IARG_MEMORYWRITE_EA, 
+			IARG_END);
 	// Log it if necessary
 	INS_InsertThenCall(ins, IPOINT_BEFORE, logwrite_fptr,
 			IARG_FAST_ANALYSIS_CALL, IARG_REG_VALUE, tsreg, 
-			IARG_MEMORYWRITE_EA, IARG_END);
+			IARG_MEMORYWRITE_EA,
+			IARG_END);
 #else // Log everything
 	INS_InsertCall(ins, IPOINT_BEFORE, logwrite_fptr,
 			IARG_FAST_ANALYSIS_CALL, IARG_REG_VALUE, tsreg, 
 			IARG_MEMORYWRITE_EA, IARG_END);
 #endif
+}
+
+
+
+static void WLogWriteLong(INS ins, UINT32 width, UINT32 entries)
+{
+	UINT32 b, off, e = 0;
+
+	// Writing less than 8 bits is not possible
+	assert((width & 0x7) == 0);
+
+	// The width's bits can help us calculate on how many entries we need.
+	// 8, 16, 32, 64, 128, 256 (max 504 bits) take a slot each
+	for (off = 0, b = 8; width && b <= 256; b <<= 1) {
+		if (width & b) { // A slot for this size
+			width &= ~b; // Clean the bit
+			DBGLOG("WLogWriteLong " + decstr(b) + "\n");
+			WLogWritePartial(ins, b, off);
+			e++;
+			off += b;
+		}
+	}
+
+	for (; width >= 256; width -= 256, off += 256) {
+		DBGLOG("WLogWriteLong 256\n");
+		WLogWritePartial(ins, 256, off);
+		e++;
+	}
+	assert(e == entries);
+}
+
+
+// Handle memory writes when a writes log is used for checkpointing
+static VOID WLogWritesHandler(INS ins, UINT32 width) 
+{
+	int entries;
+
+	entries = WLogComputeEntries(width);
+	assert(entries > 0);
+
+	WLogExpand(ins, entries);
+
+	if (entries == 1) {
+		WLogWritePartial(ins, width, 0);
+	} else {
+		DBGLOG("Long write! Width=" + decstr(width) + 
+				" entries=" + decstr(entries) + ".\n");
+		WLogWriteLong(ins, width, entries);
+	}
 }
 
 static VOID MemWriteHandler(INS ins, VOID *v) 
