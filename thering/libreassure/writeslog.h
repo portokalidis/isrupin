@@ -96,7 +96,12 @@ static inline void WLogSegAlloc(struct writeslog *wlog, UINT32 sz)
 	ASSERT(seg, "Writelog segment allocation failed\n");
 
 	seg->prev = wlog->segs;
-	seg->end = seg->start + sz;
+	//seg->end = seg->start + sz;
+	seg->end = NULL; //seg->start + sz;
+ 
+	// The end of the current segment is where we finished writing
+	if (wlog->segs)
+		wlog->segs->end = wlog->idx;
 
 	wlog->segs = seg;
 	wlog->idx = seg->start;
