@@ -1,9 +1,12 @@
 #GLIB_CFLAGS=$(shell pkg-config --cflags glib-2.0)
 #GLIB_LIBS=$(shell pkg-config --libs glib-2.0)
 LIBS+=$(GLIB_LIBS)
-CFLAGS+=$(GLIB_CFLAGS) -g -Wall -Werror -fPIC
-#CFLAGS+=-DPMALLOC_DEBUG
+#CFLAGS+=$(GLIB_CFLAGS) -Wall -Werror -fPIC -O3
+CFLAGS+=$(GLIB_CFLAGS) -Wall -Werror -D_GNU_SOURCE
+CFLAGS+=-fPIC -O0 -g
+CFLAGS+=-DPMALLOC_DEBUG
 #CFLAGS+=-DPMALLOC_WHITELIST
+LIBS=-ldl -lc
 
 
 PROG_NAME=test_pmalloc
@@ -16,7 +19,7 @@ OBJS = main.o pmalloc.o
 all: $(PROG_NAME) $(LIBRARIES) $(DLIBRARIES)
 
 $(DLIBRARIES): %.so: %.o
-	$(CC) -shared -Wl,-soname,$@ -o $@ $< -lc
+	$(CC) -shared -Wl,-soname,$@ -o $@ $< $(LIBS)
 
 $(LIBRARIES): %.a: %.o
 	ar -rc $@ $<

@@ -23,7 +23,16 @@
 #include <string.h>
 #include <stdint.h>
 
+#include <assert.h>
+#include <dlfcn.h>
+
 #include "pmalloc.h"
+
+
+/* Pointer to original posix_memalign() function */
+static int (*orig_posix_memalign)(void **, size_t, size_t);
+/* Pointer to original free() function */
+static void (*orig_free)(void *);
 
 
 #ifdef PMALLOC_WHITELIST
@@ -488,30 +497,6 @@ void pfree_2(void *buf)
 	pfree(buf);
 }
 
-
-/*---------------------------------------------------------------------------*/
-
-
-void *malloc(size_t size)
-{
-	return pmalloc(size);
-}
-
-int posix_memalign(void **memptr, size_t alignment, size_t size)
-{
-	void *ptr;
-
-#ifdef PMALLOC_DEBUG
-	fprintf(stderr, "posix_memalign: %lu %lu\n", alignment, size);
-#endif
-
-	ptr = pmalloc(size);
-	if (!ptr)
-		return -1;
-	*memptr = ptr;
-	return 0;
-}
-
 /* 
  * pmalloc
  *
@@ -783,62 +768,6 @@ static void *unprotect_area(void *ptr, size_t *real_len, size_t *lenp)
 	return start;
 }
 
-void *calloc(size_t nmemb, size_t size)
-{
-	return pcalloc(nmemb, size);
-}
-
-void *pcalloc(size_t nmemb, size_t size)
-{
-	void *ptr;
-
-	ptr = pmalloc(nmemb * size);
-	if (ptr)
-		memset(ptr, 0, nmemb * size);
-	return ptr;
-}
-
-void free(void *ptr)
-{
-	pfree(ptr);
-}
-
-/* 
- * pfree
- * Will unmap memory, then remap that address to anonymous with no
- * permissions. This has two effects: 
- * 1. Using free'd addresses will cause a segfault
- * 2. Freeing already free'd memory will cause a segfault (no error printed)
- */ 
-void pfree(void *buf)
-{
-	void *start;
-	size_t len, real_len;
-
-	if (!buf) {
-#ifdef PMALLOC_DEBUG
-		fprintf(stderr, "pfree: NULL pointer\n");
-#endif
-		return;
-	}
-
-#ifdef PMALLOC_DEBUG
-	fprintf(stderr, "pfree: ptr=%p\n", buf);
-#endif
-
-	start = unprotect_area(buf, &real_len, &len);
-
-	if (munmap(start, real_len) == -1) {
-		perror("pfree/munmap");
-		generate_fault();
-	}
-}
-
-void *realloc(void *ptr, size_t size)
-{
-	return prealloc(ptr, size);
-}
-
 /*
  * prealloc
  */
@@ -872,6 +801,227 @@ void *prealloc(void *ptr, size_t size)
 		generate_fault();
 	}
 	return new_ptr;
+}
+
+void *pcalloc(size_t nmemb, size_t size)
+{
+	void *ptr;
+
+	ptr = pmalloc(nmemb * size);
+	if (ptr)
+		memset(ptr, 0, nmemb * size);
+	return ptr;
+}
+
+#if 0
+/* 
+ * pfree
+ * Will unmap memory, then remap that address to anonymous with no
+ * permissions. This has two effects: 
+ * 1. Using free'd addresses will cause a segfault
+ * 2. Freeing already free'd memory will cause a segfault (no error printed)
+ */ 
+void pfree(void *buf)
+{
+	void *start;
+	size_t len, real_len;
+
+	if (!buf) {
+#ifdef PMALLOC_DEBUG
+		fprintf(stderr, "pfree: NULL pointer\n");
+#endif
+		return;
+	}
+
+#ifdef PMALLOC_DEBUG
+	fprintf(stderr, "pfree: ptr=%p\n", buf);
+#endif
+
+	start = unprotect_area(buf, &real_len, &len);
+
+	if (munmap(start, real_len) == -1) {
+		perror("pfree/munmap");
+		generate_fault();
+	}
+}
+#endif
+
+/*
+ * memptr points to aligned_buffer
+ *
+ * Unprotect with the guards and call the original free with main
+ * pointer (pointing at leftpad).
+ *
+ * left_guard is always at the page preceding the buffer and contains the offset
+ * of the leftpad, as well as the right_guard.
+ *
+ * |leftpad|left_guard|buffer|rightpad|right_guard|
+ *
+ */
+void pfree(void *memptr)
+{
+	void *ptr, *left_guard, *right_guard, *rightpad;
+	size_t pad_size;
+
+	/* Preceding page */
+	left_guard = (void *)((unsigned long)memptr & PAGE_MASK) - PAGE_SIZE;
+
+	/* Make left guard RW */
+	if (mprotect(left_guard, PAGE_SIZE, PROT_READ|PROT_WRITE) != 0)
+		generate_fault();
+
+	/* Main pointer for de-allocation (==leftpad) */
+	ptr = left_guard - *(size_t *)left_guard;
+
+	/* Right pad */
+	rightpad = memptr + *(size_t *)(left_guard + sizeof(size_t));
+
+	/* Right guard */
+	right_guard = memptr + *(size_t *)(left_guard + 2 * sizeof(size_t));
+
+	/* Make right guard RW */
+	if (mprotect(right_guard, PAGE_SIZE, PROT_READ|PROT_WRITE) != 0)
+		generate_fault();
+
+	pad_size = right_guard - rightpad;
+	if (pad_size)
+		check_magic_number(rightpad, pad_size);
+
+#ifdef PMALLOC_DEBUG
+	fprintf(stderr, "pfree: %p -->  "
+			"|%lu|%lu|*%lu*|%lu|%lu|\n",
+			memptr,
+			left_guard - ptr, PAGE_SIZE, rightpad - memptr,
+			pad_size, PAGE_SIZE);
+#endif
+
+	orig_free(ptr);
+}
+
+
+
+/*---------------------------------------------------------------------------*/
+/*---------------------- OVERLOADED FUNCTIONS -------------------------------*/
+/*---------------------------------------------------------------------------*/
+
+
+void *malloc(size_t size)
+{
+	fprintf(stderr, "malloc UNIMPLEMENTED!\n");
+	return NULL;
+}
+
+/*
+ * Guarded posix_memalign()
+ */
+int posix_memalign(void **memptr, size_t alignment, size_t size)
+{
+	int ret;
+	void *ptr;
+	size_t newsize, newalignment, leftpad, rightpad;
+
+	/* Check that alignment is a power of two (Bit Twiddling hacks)
+	 * Check that alignment is a multiple of sizeof(void *) */
+	if (!(alignment && !(alignment & (alignment - 1)))
+			|| (alignment & (sizeof(void *) - 1))) {
+		/* posix_memalign will fail */
+		ret = orig_posix_memalign(memptr, alignment, size);
+		assert(ret != 0);
+		return ret;
+	}
+
+	/* We return NULL without an error */
+	if (size == 0) {
+		*memptr = NULL;
+		return 0;
+	}
+
+	/* Goal is
+	 * |leftpad|left_guard|aligned_buffer|rightpad|right_guard|
+	 */
+
+	/* Force (at least) page alignment to accommodate the guard */
+	newalignment = (alignment < PAGE_SIZE)? PAGE_SIZE : alignment;
+
+	/* Right pad */
+	rightpad = PAGE_SIZE - (size & ~PAGE_MASK);
+
+	/* What we are going to ask for */
+	newsize = newalignment /* leftpad + leftguard */
+		+ size + rightpad /* size + rightpad */
+		+ PAGE_SIZE; /* rightguard */
+
+	/* Left pad */
+	leftpad = newalignment - PAGE_SIZE;
+
+#ifdef PMALLOC_DEBUG
+	fprintf(stderr, "posix_memalign: %lu %lu -->  "
+			"|%lu|%lu|*%lu*|%lu|%lu|\n",
+			alignment, size, leftpad, PAGE_SIZE, size,
+			rightpad, PAGE_SIZE);
+#endif
+
+	if ((ret = orig_posix_memalign(&ptr, newalignment, newsize)) != 0)
+		return ret; /* Memory allocation failed */
+
+	/*
+	fprintf(stderr, "ptr=%p, left guard=%p, right guard %p\n",
+			ptr, ptr + leftpad, 
+			ptr + newalignment + size + rightpad);
+	*/
+
+	/* Store the offset of the real pointer (==leftpad) from the
+	 * left guard */
+	*(size_t *)(ptr + leftpad) = leftpad;
+	/* Store the offset of the rightpad from the buffer pointer */
+	*(size_t *)(ptr + leftpad + sizeof(size_t)) = size;
+	/* Store the offset of the right guard page from the buffer pointer */
+	*(size_t *)(ptr + leftpad + 2 * sizeof(size_t)) = size + rightpad;
+
+	/* Protect left guard page */
+	if (mprotect(ptr + leftpad, PAGE_SIZE, PROT_NONE) != 0) {
+		perror("posix_memalign/mprotect");
+		goto release_mem;
+	}
+
+	/* Insert magic number in the right pad */
+	mark_magic_number(ptr + newalignment + size, rightpad);
+
+	/* Protect right guard page */
+	if (mprotect(ptr + newalignment + size + rightpad, 
+				PAGE_SIZE, PROT_NONE) != 0) {
+		perror("posix_memalign/mprotect");
+		goto release_leftguard;
+	}
+
+	*memptr = ptr + leftpad + PAGE_SIZE;
+	return ret;
+
+release_leftguard:
+	mprotect(ptr + leftpad, PAGE_SIZE, PROT_READ | PROT_WRITE);
+release_mem:
+	orig_free(ptr);
+	return EINVAL;
+}
+
+
+void *calloc(size_t nmemb, size_t size)
+{
+	fprintf(stderr, "calloc UNIMPLEMENTED!\n");
+	return NULL;
+}
+
+void free(void *ptr)
+{
+	if (ptr)
+		pfree(ptr);
+}
+
+
+void *realloc(void *ptr, size_t size)
+{
+	fprintf(stderr, "realloc UNIMPLEMENTED!\n");
+	return NULL;
 }
 
 
@@ -964,4 +1114,15 @@ map_failed:
 ret:
 	close(fd);
 #endif
+
+	if (!orig_posix_memalign) {
+		orig_posix_memalign = dlsym(RTLD_NEXT, "posix_memalign");
+		assert(orig_posix_memalign != NULL);
+	}
+
+	if (!orig_free) {
+		orig_free = dlsym(RTLD_NEXT, "free");
+		assert(orig_free != NULL);
+	}
+
 }
