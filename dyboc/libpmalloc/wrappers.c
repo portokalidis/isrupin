@@ -5,8 +5,9 @@
 
 void *malloc(size_t size)
 {
-	fprintf(stderr, "malloc UNIMPLEMENTED!\n");
-	return NULL;
+	if (size == 0)
+		return NULL;
+	return pmalloc(size);
 }
 
 

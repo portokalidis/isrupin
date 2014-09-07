@@ -1,45 +1,25 @@
-#GLIB_CFLAGS=$(shell pkg-config --cflags glib-2.0)
-#GLIB_LIBS=$(shell pkg-config --libs glib-2.0)
-LIBS+=$(GLIB_LIBS)
 #CFLAGS+=$(GLIB_CFLAGS) -Wall -Werror -fPIC -O3
-CFLAGS+=$(GLIB_CFLAGS) -Wall -Werror -D_GNU_SOURCE
-CFLAGS+=-fPIC -O0 -g
-CFLAGS+=-DPMALLOC_DEBUG
+CFLAGS+=-Wall -Werror -D_GNU_SOURCE -fPIC -DPMALLOC_DEFAULT
+CFLAGS+=-O0 -g -DPMALLOC_DEBUG
+#CFLAGS+=-O3
 #CFLAGS+=-DPMALLOC_WHITELIST
 LIBS=-ldl -lc
 
 
-PROG_NAME=test_pmalloc
-#LIBRARIES=libpmalloc.a libpmalloc_under.a libpmalloc_over.a
-DLIBRARIES=libpmalloc.so libpmalloc_under.so libpmalloc_over.so
-#CC = gcc
-OBJS = main.o pmalloc.o
+TARGETS=libpmalloc.so
+PMALLOC_COMMON_OBJS=wrappers.o whitelist.o
+PMALLOC_COMMON_HEADS=pmalloc.h whitelist.h
+	
+
+all: $(TARGETS)
 
 
-all: $(PROG_NAME) $(LIBRARIES) $(DLIBRARIES)
+libpmalloc.so: pmalloc.o $(PMALLOC_COMMON_OBJS)
+	$(CC) -shared -Wl,-soname,$@ -o $@ $^ $(LIBS)
 
-$(DLIBRARIES): %.so: %.o
-	$(CC) -shared -Wl,-soname,$@ -o $@ $< $(LIBS)
-
-$(LIBRARIES): %.a: %.o
-	ar -rc $@ $<
-	ranlib $@
-
-libpmalloc.o: pmalloc.c pmalloc.h
+%.o: %.c $(PMALLOC_COMMON_HEADS)
 	$(CC) $(CFLAGS) -DPMALLOC_DEFAULT -o $@ -c $<
 
-libpmalloc_under.o: pmalloc.c pmalloc.h
-	$(CC) $(CFLAGS) -DPMALLOC_UNDER -o $@ -c $<
-
-libpmalloc_over.o: pmalloc.c pmalloc.h
-	$(CC) $(CFLAGS) -DPMALLOC_OVER -o $@ -c $<
-
-$(PROG_NAME): main.o libpmalloc.o
-	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
-
-main.o: main.c pmalloc.h
-	$(CC) $(CFLAGS) -c $< 
 
 clean:
-	rm -f *.o
-	rm -f $(PROG_NAME) $(LIBRARIES) $(DLIBRARIES)
+	rm -f *.o $(TARGETS)
