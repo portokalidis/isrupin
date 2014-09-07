@@ -7,6 +7,8 @@ void *pmalloc(size_t size);
 
 void pfree(void *ptr);
 
+void *pcalloc(size_t nmemb, size_t size);
+	
 void *prealloc(void *ptr, size_t size);
 
 int pmemalign(void **memptr, size_t alignment, size_t size);

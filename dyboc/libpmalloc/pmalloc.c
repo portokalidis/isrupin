@@ -438,13 +438,23 @@ void *prealloc(void *ptr, size_t size)
 	return new_ptr;
 }
 
+/**
+ * Protected calloc.
+ *
+ * @param nmemb Number of elements
+ * @param size Size of each element
+ * @return Pointer to allocated user buffer
+ */
 void *pcalloc(size_t nmemb, size_t size)
 {
 	void *ptr;
+	size_t total_size;
 
-	ptr = pmalloc(nmemb * size);
+	total_size = nmemb * size;
+
+	ptr = pmalloc(total_size);
 	if (ptr)
-		memset(ptr, 0, nmemb * size);
+		memset(ptr, 0, total_size);
 	return ptr;
 }
 
@@ -604,7 +614,7 @@ int pmemalign(void **memptr, size_t alignment, size_t size)
 	leftpad = newalignment - PAGE_SIZE;
 
 #ifdef PMALLOC_DEBUG
-	fprintf(stderr, "posix_memalign: %lu %lu -->  "
+	fprintf(stderr, "pmemalign: %lu %lu -->  "
 			"|%lu|%lu|0|*%lu*|%lu|%lu|\n",
 			alignment, size, leftpad, PAGE_SIZE, size,
 			rightpad, PAGE_SIZE);
@@ -613,27 +623,11 @@ int pmemalign(void **memptr, size_t alignment, size_t size)
 	if ((ret = orig_posix_memalign(&ptr, newalignment, newsize)) != 0)
 		return ret; /* Memory allocation failed */
 
-	/*
-	fprintf(stderr, "ptr=%p, left guard=%p, right guard %p\n",
-			ptr, ptr + leftpad, 
-			ptr + newalignment + size + rightpad);
-	*/
-
 	set_pbuffer_info(ptr + leftpad, leftpad, size, rightpad);
-
-#if 0
-	/* Store the offset of the real pointer (==leftpad) from the
-	 * left guard */
-	*(size_t *)(ptr + leftpad) = leftpad;
-	/* Store the offset of the rightpad from the buffer pointer */
-	*(size_t *)(ptr + leftpad + sizeof(size_t)) = size;
-	/* Store the offset of the right guard page from the buffer pointer */
-	*(size_t *)(ptr + leftpad + 2 * sizeof(size_t)) = size + rightpad;
-#endif
 
 	/* Protect left guard page */
 	if (mprotect(ptr + leftpad, PAGE_SIZE, PROT_NONE) != 0) {
-		perror("posix_memalign/mprotect");
+		perror("pmemalign/mprotect");
 		goto release_mem;
 	}
 
@@ -643,7 +637,7 @@ int pmemalign(void **memptr, size_t alignment, size_t size)
 	/* Protect right guard page */
 	if (mprotect(ptr + newalignment + size + rightpad, 
 				PAGE_SIZE, PROT_NONE) != 0) {
-		perror("posix_memalign/mprotect");
+		perror("pmemalign/mprotect");
 		goto release_leftguard;
 	}
 

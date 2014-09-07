@@ -13,8 +13,9 @@ void *malloc(size_t size)
 
 void *calloc(size_t nmemb, size_t size)
 {
-	fprintf(stderr, "calloc UNIMPLEMENTED!\n");
-	return NULL;
+	if ((nmemb * size) == 0)
+		return NULL;
+	return pcalloc(nmemb, size);
 }
 
 void free(void *ptr)
