@@ -116,6 +116,20 @@ static void check_magic_number(void *ptr, size_t len)
 
 }
 
+static void raise_signal()
+{
+	raise(SIGSEGV);
+}
+
+static inline void access_error_page()
+{
+	char *p = (char *)error_page;
+
+	/* This should throw a segfault */
+	*p = 'A';
+}
+
+
 #if 0
 /* 
  * pmalloc
@@ -492,36 +506,59 @@ void pfree(void *memptr)
 }
 
 
-/*
+/**
+ * Protected malloc.
  * Goal is protect overflow first
- * |left_guard|align_pad|buffer|right_guard|
+ * |left_guard|leftpad|buffer|right_guard|
+ *
+ * @param size Buffer size to allocate
+ * @return Pointer to allocated user buffer
  */
 void *pmalloc(size_t size)
 {
-#if 0
-	size_t newsize;
+	size_t newsize, lplen;
 	void *ptr;
 
-	/* We are going to use malloc */
+	/* Calculate if we need a leftpad */
+	lplen = size & ~PAGE_MASK;
+	if (lplen)
+		lplen = PAGE_SIZE - lplen;
 
-	/* Size of allocation should be rounded to page size and include the
-	 * guard pages */
-	newsize = (size & PAGE_MASK) + 3 * PAGE_SIZE;
+	newsize = size + lplen + 2 * PAGE_SIZE;
 
 	if (orig_posix_memalign(&ptr, PAGE_SIZE, newsize) != 0)
 		return NULL;
 
-	align_pad = newsize - 2 * PAGE_SIZE - size;
+	/* Leftpad length */
+	if (lplen)
+		/* Insert magic number in the left pad */
+		mark_magic_number(ptr + PAGE_SIZE, lplen);
 
+	set_pbuffer_info(ptr, 0, size, 0);
 
-	mprotect(ptr, PAGE_SIZE, PROT_NONE);
+	if (mprotect(ptr, PAGE_SIZE, PROT_NONE) != 0) {
+		perror("pmalloc/mprotect");
+		goto release_mem;
+	}
 
-	mprotect(ptr + PAGE_SIZE + leftpad + size, PAGE_SIZE, PROT_NONE);
+	if (mprotect(ptr + newsize - PAGE_SIZE, PAGE_SIZE, PROT_NONE) != 0) {
+		perror("pmalloc/mprotect");
+		goto revert_lguard;
+	}
 
-
-	memptr = ptr + PAGE_SIZE + leftpad;
-	return memptr;
+#ifdef PMALLOC_DEBUG
+	fprintf(stderr, "pmalloc: %lu -->  "
+			"|0|%lu|%lu|*%lu*|0|%lu|\n",
+			size, 
+			PAGE_SIZE, lplen, size, PAGE_SIZE);
 #endif
+
+	return (ptr + PAGE_SIZE + lplen);
+
+revert_lguard:
+	mprotect(ptr, PAGE_SIZE, PROT_NONE);
+release_mem:
+	orig_free(ptr);
 	return NULL;
 }
 
@@ -622,19 +659,6 @@ release_mem:
 
 
 
-
-static void raise_signal()
-{
-	raise(SIGSEGV);
-}
-
-static inline void access_error_page()
-{
-	char *p = (char *)error_page;
-
-	/* This should throw a segfault */
-	*p = 'A';
-}
 
 
 __attribute__((constructor)) 

@@ -43,6 +43,14 @@ int main()
 	memset(buf, 'A', 1008);
 	free(buf);
 
+	if ((r = posix_memalign(&buf, 4096, 8192)) != 0) {
+		fprintf(stderr, "memalign: %s\n", strerror(r));
+		return 1;
+	}
+	memset(buf, 'A', 1008);
+	free(buf);
+
+
 	if ((r = posix_memalign(&buf, 8192, 1008)) != 0) {
 		fprintf(stderr, "memalign: %s\n", strerror(r));
 		return 1;

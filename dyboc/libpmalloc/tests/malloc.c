@@ -29,6 +29,23 @@ int main()
 	memset(buf, 'A', 1008);
 	free(buf);
 
+	if ((buf = malloc(4096)) == NULL) {
+		fprintf(stderr, "malloc: %s\n", strerror(ENOMEM));
+		return 1;
+	}
+	memset(buf, 'A', 4096);
+	free(buf);
+
+	if ((buf = malloc(1)) == NULL) {
+		fprintf(stderr, "malloc: %s\n", strerror(ENOMEM));
+		return 1;
+	}
+	memset(buf, 'A', 1);
+	memtouch(buf - 4095, 4096);
+	free(buf);
+
+
+
 	return 0;
 }
 
