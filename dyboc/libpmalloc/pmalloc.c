@@ -25,6 +25,8 @@ static int (*orig_posix_memalign)(void **, size_t, size_t);
 /* Pointer to original free() function */
 static void (*orig_free)(void *);
 
+/* Pointer to original realloc() functions */
+static void (*orig_realloc)(void *, size_t);
 
 
 // Special error page for generating faults
@@ -278,6 +280,7 @@ void *pmalloc(size_t len)
 }
 #endif
 
+#if 0
 /*
  * Unprotect an area returned by malloc, and return the begin of the mapped area
  * and its real length
@@ -402,40 +405,112 @@ static void *unprotect_area(void *ptr, size_t *real_len, size_t *lenp)
 
 	return start;
 }
-
-/*
- * prealloc
- */
-void *prealloc(void *ptr, size_t size)
-{
-	void *new_ptr, *old_area;
-	size_t old_len, old_arealen;
-
-#ifdef PMALLOC_DEBUG
-	fprintf(stderr, "prealloc: old_ptr=%p new size=%lu\n", ptr, size);
 #endif
 
-	if (!ptr)
-		return pmalloc(size);
-	else if (size == 0) {
-		pfree(ptr);
-		return NULL;
+/**
+ * Protected realloc.
+ *
+ * @param memptr Pointer to previous buffer
+ * @param size New required size
+ * @return Pointer to reallocated user buffer
+ */
+void *prealloc(void *memptr, size_t size)
+{
+	void *leftguard, *rightguard, *rightpad, *leftpad, *newptr;
+	size_t ptr_off, buflen, rplen, lplen;
+
+	/* Left pad may not exist */
+	leftpad = (void *)((unsigned long)memptr & PAGE_MASK);
+
+	/* Preceding page is the left guard*/
+	leftguard = leftpad - PAGE_SIZE;
+
+	/* Make left guard RW */
+	if (mprotect(leftguard, PAGE_SIZE, PROT_READ|PROT_WRITE) != 0)
+		generate_fault();
+
+	get_pbuffer_info(leftguard, &ptr_off, &buflen, &rplen);
+
+	/* left pad length */
+	lplen = memptr - leftpad;
+	if (lplen)
+		check_magic_number(leftpad, lplen);
+
+	/* Right pad */
+	rightpad = memptr + buflen;
+
+	/* Right guard */
+	rightguard = rightpad + rplen;
+
+	if (rplen)
+		check_magic_number(rightpad, rplen);
+
+#ifdef PMALLOC_DEBUG
+	fprintf(stderr, "prealloc: %p %lu -->  "
+			"|%lu|%lu|%lu|*%lu*|%lu|%lu|\n",
+			memptr, size, 
+			ptr_off, PAGE_SIZE, lplen, buflen, rplen, PAGE_SIZE);
+#endif
+
+	/* We are lucky to have enough space in the padding for the
+	 * reallocation.
+	 * NOTE: We are leaking the magic number here, but it is
+	 * not so important since the guard pages are still there. An attacker
+	 * can only delay detection not bypass the guards. */
+	if ((rplen + lplen + buflen) >= size) {
+		buflen += rplen;
+		if (buflen > size) { 
+			/* rightpad is more than enough */
+			rplen = buflen - size;
+			buflen = size;
+			mark_magic_number(memptr + buflen, rplen);
+		} else {
+			rplen = 0;
+		}
+
+		if (buflen < size) {
+			/* We need to also use the leftpad */
+			buflen += lplen;
+			if (buflen > size) {
+				/* leftpad is more than enough */
+				lplen = buflen - size;
+				buflen = size;
+				mark_magic_number(leftpad, lplen);
+			} else {
+				lplen = 0;
+			}
+		}
+
+		set_pbuffer_info(leftguard, ptr_off, buflen, rplen);
+
+		/* Re-protect guard page */
+		if (mprotect(leftguard, PAGE_SIZE, PROT_READ|PROT_WRITE) != 0)
+			generate_fault();
+
+
+#ifdef PMALLOC_DEBUG
+		fprintf(stderr, "prealloc fast: %p %lu -->  "
+				"|%lu|%lu|%lu|*%lu*|%lu|%lu|\n",
+				memptr, size, 
+				ptr_off, PAGE_SIZE, lplen, buflen, 
+				rplen, PAGE_SIZE);
+#endif
+
+		return (leftguard + PAGE_SIZE + lplen);
 	}
 
-	/* XXX: Dummy version.
-	 * Allocate new area, find information about older area,
-	 * copy data, free old area.
-	 */
-	new_ptr = pmalloc(size);
-	old_area = unprotect_area(ptr, &old_arealen, &old_len);
-	if (old_len < size)
-		size = old_len;
-	memcpy(new_ptr, ptr, size);
-	if (munmap(old_area, old_arealen) == -1) {
-		perror("prealloc/munmap");
+	/* Make right guard RW */
+	if (mprotect(rightguard, PAGE_SIZE, PROT_READ|PROT_WRITE) != 0)
 		generate_fault();
-	}
-	return new_ptr;
+
+	newptr = pmalloc(size);
+	if (!newptr)
+		return newptr;
+
+	memcpy(newptr, memptr, buflen);
+
+	orig_free(leftguard - ptr_off);
+	return newptr;
 }
 
 /**
@@ -685,4 +760,8 @@ map_failed:
 		assert(orig_free != NULL);
 	}
 
+	if (!orig_realloc) {
+		orig_realloc = dlsym(RTLD_NEXT, "realloc");
+		assert(orig_realloc != NULL);
+	}
 }

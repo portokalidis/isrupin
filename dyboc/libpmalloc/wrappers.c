@@ -26,8 +26,14 @@ void free(void *ptr)
 
 void *realloc(void *ptr, size_t size)
 {
-	fprintf(stderr, "realloc UNIMPLEMENTED!\n");
-	return NULL;
+	if (!ptr)
+		return pmalloc(size);
+	else if (size == 0) {
+		pfree(ptr);
+		return NULL;
+	}
+
+	return prealloc(ptr, size);
 }
 
 

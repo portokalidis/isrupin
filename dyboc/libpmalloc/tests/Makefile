@@ -3,7 +3,7 @@ LIBS+=-lpmalloc
 LDFLAGS+=-L../
 
 
-TESTS=memalign malloc calloc
+TESTS=memalign malloc calloc realloc
 
 
 all: $(TESTS)
