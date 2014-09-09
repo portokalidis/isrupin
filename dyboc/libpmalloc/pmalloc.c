@@ -24,24 +24,11 @@
 #define PMALLOC_ALIGNMENT (2 * sizeof(void *))
 
 
-/* Pointer to original posix_memalign() function */
-static int (*orig_posix_memalign)(void **, size_t, size_t) = NULL;
-
-/* Pointer to original free() function */
-static void (*orig_free)(void *) = NULL;
-
-/* Pointer to original realloc() functions */
-static void (*orig_realloc)(void *, size_t) = NULL;
-
-
 // Special error page for generating faults
 static void *error_page = NULL;
 
 // Fault generation function to use
 static void (*generate_fault)(void);
-
-/* pmalloc setip done */
-int pmalloc_done = 0;
 
 
 /**
@@ -545,30 +532,10 @@ void *prealloc(void *memptr, size_t size)
 	if (!newptr)
 		return newptr;
 	memcpy(newptr, memptr, buflen);
-	orig_free(leftguard - ptr_off);
+	munmap(leftguard - ptr_off, ptr_off + buflen + lplen + 
+			rplen + 2 * PAGE_SIZE);
 	return newptr;
 }
-
-/**
- * Protected calloc.
- *
- * @param nmemb Number of elements
- * @param size Size of each element
- * @return Pointer to allocated user buffer
- */
-void *pcalloc(size_t nmemb, size_t size)
-{
-	void *ptr;
-	size_t total_size;
-
-	total_size = nmemb * size;
-
-	ptr = pmalloc(total_size);
-	if (ptr)
-		memset(ptr, 0, total_size);
-	return ptr;
-}
-
 
 /**
  * Free a pbuffer.
@@ -623,7 +590,8 @@ void pfree(void *memptr)
 			PAGE_SIZE, lplen, buflen, rplen, PAGE_SIZE);
 #endif
 
-	orig_free(leftguard - ptr_off);
+	munmap(leftguard - ptr_off, ptr_off + lplen + buflen + 
+			rplen + 2 * PAGE_SIZE);
 }
 
 
@@ -650,15 +618,13 @@ void *pmalloc(size_t size)
 		/* Pointer returned to user must be aligned */
 		rplen = lplen & (PMALLOC_ALIGNMENT - 1);
 		lplen -= rplen;
-		//if (rplen) {
-			//rplen = PMALLOC_ALIGNMENT - rplen;
-			//lplen -= rplen;
-		//}
 	}
 
 	newsize = size + lplen + rplen + 2 * PAGE_SIZE;
 
-	if (orig_posix_memalign(&ptr, PAGE_SIZE, newsize) != 0)
+
+	if ((ptr = mmap(NULL, newsize, PROT_READ | PROT_WRITE, 
+			MAP_PRIVATE | MAP_ANONYMOUS, 0, 0)) == (void *)-1)
 		return NULL;
 
 	if (lplen)
@@ -694,7 +660,7 @@ void *pmalloc(size_t size)
 revert_lguard:
 	mprotect(ptr, PAGE_SIZE, PROT_READ|PROT_WRITE);
 release_mem:
-	orig_free(ptr);
+	munmap(ptr, newsize);
 	errno = e;
 	return NULL;
 }
@@ -703,7 +669,7 @@ release_mem:
 /**
  * Guarded posix_memalign()
  * Goal is
- * |leftpad|left_guard|aligned_buffer|rightpad|right_guard|
+ * |left_guard|leftpad|aligned_buffer|rightpad|right_guard|
  *
  * @param memptr Allocated aligned buffer
  * @param alignment Requested alignment
@@ -711,70 +677,89 @@ release_mem:
  */
 int pmemalign(void **memptr, size_t alignment, size_t size)
 {
-	int ret, e;
+	int e;
 	void *ptr;
-	size_t newsize, newalignment, leftpad, rightpad;
+	size_t newsize, rplen, llplen, inner_off = 0;
 
 	/* Check that alignment is a power of two (Bit Twiddling hacks)
 	 * Check that alignment is a multiple of sizeof(void *) */
 	if (!(alignment && !(alignment & (alignment - 1))) 
 			|| (alignment & (sizeof(void *) - 1))) {
 		/* posix_memalign will fail */
-		ret = orig_posix_memalign(memptr, alignment, size);
-		assert(ret != 0);
-		return ret;
+		return EINVAL;
 	}
 
+	/* Right pad makes the allocation page aligned */
+	rplen = size & ~PAGE_MASK;
+	if (rplen)
+		rplen = PAGE_SIZE - rplen;
 
-	/* Force (at least) page alignment to accommodate the guard */
-	newalignment = (alignment < PAGE_SIZE)? PAGE_SIZE : alignment;
-
-	/* Right pad */
-	rightpad = PAGE_SIZE - (size & ~PAGE_MASK);
+	if (alignment > PAGE_SIZE) {
+		/* Need additional space in case the area returned is not
+		 * aligned where we want it to be */
+		llplen = alignment - PAGE_SIZE;
+	} else {
+		/* otherwise buffer is going to be already page aligned */
+		llplen = 0;
+	}
 
 	/* What we are going to ask for */
-	newsize = newalignment /* leftpad + leftguard */
-		+ size + rightpad /* size + rightpad */
-		+ PAGE_SIZE; /* rightguard */
+	newsize = size + rplen + 2 * PAGE_SIZE;
 
-	/* Left pad */
-	leftpad = newalignment - PAGE_SIZE;
+	if ((ptr = mmap(NULL, newsize + llplen, PROT_READ | PROT_WRITE, 
+			MAP_PRIVATE | MAP_ANONYMOUS, 0, 0)) == (void *)-1)
+		return errno; /* Memory allocation failed */
+
+	/* Figure out where everything is supposed to be */
+	if (alignment > PAGE_SIZE) {
+		inner_off = ((unsigned  long)ptr + PAGE_SIZE) & 
+			(alignment - 1);
+		if (inner_off == 0) {
+			/* super lucky, perfectly aligned.
+			 * release excess space */
+			munmap(ptr + size + rplen + 2 * PAGE_SIZE, llplen);
+		} else {
+			munmap(ptr, inner_off);
+			ptr += inner_off;
+			munmap(ptr + size + rplen + 2 * PAGE_SIZE, 
+					llplen - inner_off);
+		}
+	}
 
 #ifdef PMALLOC_DEBUG
 	fprintf(stderr, "pmemalign: %lu %lu -->  "
-			"|%lu|%lu|0|*%lu*|%lu|%lu|\n",
-			alignment, size, leftpad, PAGE_SIZE, size,
-			rightpad, PAGE_SIZE);
+			"|%lu|%lu|0|*%lu*|%lu|%lu| %p, %lu\n",
+			alignment, size, 
+			llplen, PAGE_SIZE, size,
+			rplen, PAGE_SIZE, ptr, inner_off);
 #endif
 
-	if ((ret = orig_posix_memalign(&ptr, newalignment, newsize)) != 0)
-		return ret; /* Memory allocation failed */
 
-	set_pbuffer_info(ptr + leftpad, leftpad, size, rightpad);
+	set_pbuffer_info(ptr, 0, size, rplen);
 
 	/* Protect left guard page */
-	if (mprotect(ptr + leftpad, PAGE_SIZE, PROT_NONE) != 0) {
+	if (mprotect(ptr, PAGE_SIZE, PROT_NONE) != 0) {
 		e = errno;
 		goto release_mem;
 	}
 
 	/* Insert magic number in the right pad */
-	mark_magic_number(ptr + newalignment + size, rightpad);
+	mark_magic_number(ptr + PAGE_SIZE + size, rplen);
 
 	/* Protect right guard page */
-	if (mprotect(ptr + newalignment + size + rightpad, 
+	if (mprotect(ptr + PAGE_SIZE + size + rplen, 
 				PAGE_SIZE, PROT_NONE) != 0) {
 		e = errno;
 		goto release_leftguard;
 	}
 
-	*memptr = ptr + leftpad + PAGE_SIZE;
-	return ret;
+	*memptr = ptr + PAGE_SIZE;
+	return 0;
 
 release_leftguard:
-	mprotect(ptr + leftpad, PAGE_SIZE, PROT_READ | PROT_WRITE);
+	mprotect(ptr, PAGE_SIZE, PROT_READ | PROT_WRITE);
 release_mem:
-	orig_free(ptr);
+	munmap(ptr, newsize);
 	return e;
 }
 
@@ -796,23 +781,4 @@ map_failed:
 #ifdef PMALLOC_WHITELIST
 	whitelist_init();
 #endif
-
-	if (!orig_posix_memalign) {
-		/* This will actually call calloc, which returns NULL at this
-		 * stage */
-		orig_posix_memalign = dlsym(RTLD_NEXT, "posix_memalign");
-		assert(orig_posix_memalign != NULL);
-	}
-
-	if (!orig_free) {
-		orig_free = dlsym(RTLD_NEXT, "free");
-		assert(orig_free != NULL);
-	}
-
-	if (!orig_realloc) {
-		orig_realloc = dlsym(RTLD_NEXT, "realloc");
-		assert(orig_realloc != NULL);
-	}
-
-	pmalloc_done = 1;
 }

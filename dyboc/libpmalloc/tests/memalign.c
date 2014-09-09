@@ -28,14 +28,6 @@ int main()
 	memset(buf, 'A', 1008);
 	free(buf);
 
-	if ((r = posix_memalign(&buf, 8, 1008)) != 0) {
-		fprintf(stderr, "memalign: %s\n", strerror(r));
-		return 1;
-	}
-	memset(buf, 'A', 1008);
-	memtouch(buf, 4096);
-	free(buf);
-
 	if ((r = posix_memalign(&buf, 4096, 1008)) != 0) {
 		fprintf(stderr, "memalign: %s\n", strerror(r));
 		return 1;
@@ -47,22 +39,22 @@ int main()
 		fprintf(stderr, "memalign: %s\n", strerror(r));
 		return 1;
 	}
-	memset(buf, 'A', 1008);
+	memset(buf, 'A', 8192);
 	free(buf);
 
 
-	if ((r = posix_memalign(&buf, 8192, 1008)) != 0) {
+	if ((r = posix_memalign(&buf, 8192, 8176)) != 0) {
 		fprintf(stderr, "memalign: %s\n", strerror(r));
 		return 1;
 	}
-	memset(buf, 'A', 1008);
+	memset(buf, 'A', 8176);
 	free(buf);
 
-	if ((r = posix_memalign(&buf, 1024, 80000)) != 0) {
+	if ((r = posix_memalign(&buf, 16384, 15000)) != 0) {
 		fprintf(stderr, "memalign: %s\n", strerror(r));
 		return 1;
 	}
-	memset(buf, 'A', 80000);
+	memset(buf, 'A', 15000);
 	free(buf);
 
 	return 0;
