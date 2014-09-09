@@ -41,9 +41,14 @@ int main()
 		return 1;
 	}
 	memset(buf, 'A', 1);
-	memtouch(buf - 4095, 4096);
 	free(buf);
 
+	if ((buf = malloc(4095)) == NULL) {
+		fprintf(stderr, "malloc: %s\n", strerror(ENOMEM));
+		return 1;
+	}
+	memset(buf, 'A', 4095);
+	free(buf);
 
 
 	return 0;

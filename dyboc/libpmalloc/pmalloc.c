@@ -19,6 +19,11 @@
 #include "pmalloc.h"
 
 
+/* Segments allocated with pmalloc will return a user buffer with this 
+ * alignment */
+#define PMALLOC_ALIGNMENT (2 * sizeof(void *))
+
+
 /* Pointer to original posix_memalign() function */
 static int (*orig_posix_memalign)(void **, size_t, size_t) = NULL;
 
@@ -458,6 +463,9 @@ void *prealloc(void *memptr, size_t size)
 		/* Re-protect guard page */
 		if (mprotect(leftguard, PAGE_SIZE, PROT_NONE) != 0)
 			generate_fault();
+#ifdef PMALLOC_DEBUG
+		fprintf(stderr, "prealloc stay\n");
+#endif
 		return memptr;
 	} else if (buflen > size) { /* reduction in size */
 		lplen += buflen - size;
@@ -468,6 +476,13 @@ void *prealloc(void *memptr, size_t size)
 		/* Re-protect guard page */
 		if (mprotect(leftguard, PAGE_SIZE, PROT_NONE) != 0)
 			generate_fault();
+#ifdef PMALLOC_DEBUG
+		fprintf(stderr, "prealloc shorten: %p %lu -->  "
+				"|%lu|%lu|%lu|*%lu*|%lu|%lu|\n",
+				memptr, size, 
+				ptr_off, PAGE_SIZE, lplen, buflen, 
+				rplen, PAGE_SIZE);
+#endif
 		return memptr;
 	} 
 #if 0
@@ -494,8 +509,6 @@ void *prealloc(void *memptr, size_t size)
 			/* We need to also use the leftpad. Some moving
 			 * required. */
 			if ((l + lplen) > size) {
-				/* leftpad is more than enough */
-				lplen -= (size - l);
 				mark_magic_number(leftpad, lplen);
 			} else {
 				lplen = 0;
@@ -531,9 +544,7 @@ void *prealloc(void *memptr, size_t size)
 	newptr = pmalloc(size);
 	if (!newptr)
 		return newptr;
-
 	memcpy(newptr, memptr, buflen);
-
 	orig_free(leftguard - ptr_off);
 	return newptr;
 }
@@ -619,58 +630,72 @@ void pfree(void *memptr)
 /**
  * Protected malloc.
  * Goal is protect overflow first
- * |left_guard|leftpad|buffer|right_guard|
+ * |left_guard|leftpad|buffer|rightpad|right_guard|
  *
  * @param size Buffer size to allocate
  * @return Pointer to allocated user buffer
  */
 void *pmalloc(size_t size)
 {
-	size_t newsize, lplen;
+	size_t newsize, lplen, rplen;
 	void *ptr;
+	int e;
 
-	/* Calculate if we need a leftpad */
+	/* Calculate padding */
 	lplen = size & ~PAGE_MASK;
-	if (lplen)
+	rplen = 0;
+
+	if (lplen) {
 		lplen = PAGE_SIZE - lplen;
+		/* Pointer returned to user must be aligned */
+		rplen = lplen & (PMALLOC_ALIGNMENT - 1);
+		lplen -= rplen;
+		//if (rplen) {
+			//rplen = PMALLOC_ALIGNMENT - rplen;
+			//lplen -= rplen;
+		//}
+	}
 
-
-	newsize = size + lplen + 2 * PAGE_SIZE;
+	newsize = size + lplen + rplen + 2 * PAGE_SIZE;
 
 	if (orig_posix_memalign(&ptr, PAGE_SIZE, newsize) != 0)
 		return NULL;
 
-	/* Leftpad length */
 	if (lplen)
 		/* Insert magic number in the left pad */
 		mark_magic_number(ptr + PAGE_SIZE, lplen);
 
-	set_pbuffer_info(ptr, 0, size, 0);
+	if (rplen)
+		/* Insert magic number in the right pad */
+		mark_magic_number(ptr + PAGE_SIZE + lplen + size, rplen);
+
+	set_pbuffer_info(ptr, 0, size, rplen);
 
 	if (mprotect(ptr, PAGE_SIZE, PROT_NONE) != 0) {
-		perror("pmalloc/mprotect");
+		e = errno;
 		goto release_mem;
 	}
 
 	if (mprotect(ptr + newsize - PAGE_SIZE, PAGE_SIZE, PROT_NONE) != 0) {
-		perror("pmalloc/mprotect");
+		e = errno;
 		goto revert_lguard;
 	}
 
 #ifdef PMALLOC_DEBUG
 	fprintf(stderr, "pmalloc: %lu -->  "
-			"|0|%lu|%lu|*%lu*|0|%lu| %p\n",
+			"|0|%lu|%lu|*%lu*|%lu|%lu| %p\n",
 			size, 
-			PAGE_SIZE, lplen, size, PAGE_SIZE,
+			PAGE_SIZE, lplen, size, rplen, PAGE_SIZE,
 			ptr + PAGE_SIZE + lplen);
 #endif
 
 	return (ptr + PAGE_SIZE + lplen);
 
 revert_lguard:
-	mprotect(ptr, PAGE_SIZE, PROT_NONE);
+	mprotect(ptr, PAGE_SIZE, PROT_READ|PROT_WRITE);
 release_mem:
 	orig_free(ptr);
+	errno = e;
 	return NULL;
 }
 
@@ -686,13 +711,13 @@ release_mem:
  */
 int pmemalign(void **memptr, size_t alignment, size_t size)
 {
-	int ret;
+	int ret, e;
 	void *ptr;
 	size_t newsize, newalignment, leftpad, rightpad;
 
 	/* Check that alignment is a power of two (Bit Twiddling hacks)
 	 * Check that alignment is a multiple of sizeof(void *) */
-	if (!(alignment && !(alignment & (alignment - 1)))
+	if (!(alignment && !(alignment & (alignment - 1))) 
 			|| (alignment & (sizeof(void *) - 1))) {
 		/* posix_memalign will fail */
 		ret = orig_posix_memalign(memptr, alignment, size);
@@ -729,7 +754,7 @@ int pmemalign(void **memptr, size_t alignment, size_t size)
 
 	/* Protect left guard page */
 	if (mprotect(ptr + leftpad, PAGE_SIZE, PROT_NONE) != 0) {
-		perror("pmemalign/mprotect");
+		e = errno;
 		goto release_mem;
 	}
 
@@ -739,7 +764,7 @@ int pmemalign(void **memptr, size_t alignment, size_t size)
 	/* Protect right guard page */
 	if (mprotect(ptr + newalignment + size + rightpad, 
 				PAGE_SIZE, PROT_NONE) != 0) {
-		perror("pmemalign/mprotect");
+		e = errno;
 		goto release_leftguard;
 	}
 
@@ -750,7 +775,7 @@ release_leftguard:
 	mprotect(ptr + leftpad, PAGE_SIZE, PROT_READ | PROT_WRITE);
 release_mem:
 	orig_free(ptr);
-	return EINVAL;
+	return e;
 }
 
 void pmalloc_init(void)
