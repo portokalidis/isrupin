@@ -13,6 +13,10 @@ void *prealloc(void *ptr, size_t size);
 
 int pmemalign(void **memptr, size_t alignment, size_t size);
 
+void pmalloc_init(void);
+
+extern int pmalloc_done;
+
 //JIKK
 //void dyboc_sig_handler(int sig);
 

@@ -20,21 +20,23 @@
 
 
 /* Pointer to original posix_memalign() function */
-static int (*orig_posix_memalign)(void **, size_t, size_t);
+static int (*orig_posix_memalign)(void **, size_t, size_t) = NULL;
 
 /* Pointer to original free() function */
-static void (*orig_free)(void *);
+static void (*orig_free)(void *) = NULL;
 
 /* Pointer to original realloc() functions */
-static void (*orig_realloc)(void *, size_t);
+static void (*orig_realloc)(void *, size_t) = NULL;
 
 
 // Special error page for generating faults
 static void *error_page = NULL;
+
 // Fault generation function to use
 static void (*generate_fault)(void);
 
-
+/* pmalloc setip done */
+int pmalloc_done = 0;
 
 
 /**
@@ -452,36 +454,58 @@ void *prealloc(void *memptr, size_t size)
 			ptr_off, PAGE_SIZE, lplen, buflen, rplen, PAGE_SIZE);
 #endif
 
+	if (buflen == size) { /* same size */
+		/* Re-protect guard page */
+		if (mprotect(leftguard, PAGE_SIZE, PROT_NONE) != 0)
+			generate_fault();
+		return memptr;
+	} else if (buflen > size) { /* reduction in size */
+		lplen += buflen - size;
+		set_pbuffer_info(leftguard, ptr_off, size, rplen);
+		memmove(leftguard + PAGE_SIZE + lplen, memptr, size);
+		memptr += buflen - size;
+		mark_magic_number(leftpad, lplen);
+		/* Re-protect guard page */
+		if (mprotect(leftguard, PAGE_SIZE, PROT_NONE) != 0)
+			generate_fault();
+		return memptr;
+	} 
+#if 0
+	else if ((rplen + lplen + buflen) >= size) {
 	/* We are lucky to have enough space in the padding for the
 	 * reallocation.
 	 * NOTE: We are leaking the magic number here, but it is
 	 * not so important since the guard pages are still there. An attacker
 	 * can only delay detection not bypass the guards. */
-	if ((rplen + lplen + buflen) >= size) {
-		buflen += rplen;
-		if (buflen > size) { 
-			/* rightpad is more than enough */
-			rplen = buflen - size;
-			buflen = size;
-			mark_magic_number(memptr + buflen, rplen);
+
+		/* Extending to the right does not require any data moving. */
+		size_t l = buflen;
+
+		if ((buflen + rplen) > size) {
+			l = size;
+			rplen -= (size - buflen);
+			mark_magic_number(memptr + l, rplen);
 		} else {
+			l += rplen;
 			rplen = 0;
 		}
 
-		if (buflen < size) {
-			/* We need to also use the leftpad */
-			buflen += lplen;
-			if (buflen > size) {
+		if (l < size) {
+			/* We need to also use the leftpad. Some moving
+			 * required. */
+			if ((l + lplen) > size) {
 				/* leftpad is more than enough */
-				lplen = buflen - size;
-				buflen = size;
+				lplen -= (size - l);
 				mark_magic_number(leftpad, lplen);
 			} else {
 				lplen = 0;
 			}
+			l = size;
+
+			memmove(leftguard + PAGE_SIZE + lplen, memptr, buflen);
 		}
 
-		set_pbuffer_info(leftguard, ptr_off, buflen, rplen);
+		set_pbuffer_info(leftguard, ptr_off, l, rplen);
 
 		/* Re-protect guard page */
 		if (mprotect(leftguard, PAGE_SIZE, PROT_READ|PROT_WRITE) != 0)
@@ -492,12 +516,13 @@ void *prealloc(void *memptr, size_t size)
 		fprintf(stderr, "prealloc fast: %p %lu -->  "
 				"|%lu|%lu|%lu|*%lu*|%lu|%lu|\n",
 				memptr, size, 
-				ptr_off, PAGE_SIZE, lplen, buflen, 
+				ptr_off, PAGE_SIZE, lplen, l, 
 				rplen, PAGE_SIZE);
 #endif
 
 		return (leftguard + PAGE_SIZE + lplen);
 	}
+#endif
 
 	/* Make right guard RW */
 	if (mprotect(rightguard, PAGE_SIZE, PROT_READ|PROT_WRITE) != 0)
@@ -609,6 +634,7 @@ void *pmalloc(size_t size)
 	if (lplen)
 		lplen = PAGE_SIZE - lplen;
 
+
 	newsize = size + lplen + 2 * PAGE_SIZE;
 
 	if (orig_posix_memalign(&ptr, PAGE_SIZE, newsize) != 0)
@@ -633,9 +659,10 @@ void *pmalloc(size_t size)
 
 #ifdef PMALLOC_DEBUG
 	fprintf(stderr, "pmalloc: %lu -->  "
-			"|0|%lu|%lu|*%lu*|0|%lu|\n",
+			"|0|%lu|%lu|*%lu*|0|%lu| %p\n",
 			size, 
-			PAGE_SIZE, lplen, size, PAGE_SIZE);
+			PAGE_SIZE, lplen, size, PAGE_SIZE,
+			ptr + PAGE_SIZE + lplen);
 #endif
 
 	return (ptr + PAGE_SIZE + lplen);
@@ -726,31 +753,28 @@ release_mem:
 	return EINVAL;
 }
 
-
-
-
-
-__attribute__((constructor)) 
-void __init(void)
+void pmalloc_init(void)
 {
-
 	error_page = mmap(0, PAGE_SIZE, PROT_READ|PROT_WRITE, 
 			MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
 	if (error_page == MAP_FAILED) {
 map_failed:
 		generate_fault = raise_signal;
-		perror("init:mmap");
+		perror("init/mmap");
 	} else {
 		generate_fault = access_error_page;
 		mark_magic_number(error_page, PAGE_SIZE);
 		if (mprotect(error_page, PAGE_SIZE, PROT_NONE) != 0)
 			goto map_failed;
 	}
+
 #ifdef PMALLOC_WHITELIST
 	whitelist_init();
 #endif
 
 	if (!orig_posix_memalign) {
+		/* This will actually call calloc, which returns NULL at this
+		 * stage */
 		orig_posix_memalign = dlsym(RTLD_NEXT, "posix_memalign");
 		assert(orig_posix_memalign != NULL);
 	}
@@ -764,4 +788,6 @@ map_failed:
 		orig_realloc = dlsym(RTLD_NEXT, "realloc");
 		assert(orig_realloc != NULL);
 	}
+
+	pmalloc_done = 1;
 }
