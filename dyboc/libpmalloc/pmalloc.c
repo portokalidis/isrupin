@@ -6,8 +6,8 @@
 #include <sys/fcntl.h>
 #include <signal.h>
 #include <errno.h>
+#include <sys/param.h>
 
-//#include <glib.h> //For datastructures
 #include <stdlib.h>
 #include <strings.h>
 #include <string.h>
@@ -450,11 +450,10 @@ void *prealloc(void *memptr, size_t size)
 		/* Re-protect guard page */
 		if (mprotect(leftguard, PAGE_SIZE, PROT_NONE) != 0)
 			generate_fault();
-#ifdef PMALLOC_DEBUG
-		fprintf(stderr, "prealloc stay\n");
-#endif
 		return memptr;
-	} else if (buflen > size) { /* reduction in size */
+	}
+#if 0
+	else if (buflen > size) { /* reduction in size */
 		lplen += buflen - size;
 		set_pbuffer_info(leftguard, ptr_off, size, rplen);
 		memmove(leftguard + PAGE_SIZE + lplen, memptr, size);
@@ -472,6 +471,7 @@ void *prealloc(void *memptr, size_t size)
 #endif
 		return memptr;
 	} 
+#endif
 #if 0
 	else if ((rplen + lplen + buflen) >= size) {
 	/* We are lucky to have enough space in the padding for the
@@ -531,7 +531,7 @@ void *prealloc(void *memptr, size_t size)
 	newptr = pmalloc(size);
 	if (!newptr)
 		return newptr;
-	memcpy(newptr, memptr, buflen);
+	memcpy(newptr, memptr, MIN(buflen, size));
 	munmap(leftguard - ptr_off, ptr_off + buflen + lplen + 
 			rplen + 2 * PAGE_SIZE);
 	return newptr;
@@ -550,7 +550,7 @@ void *prealloc(void *memptr, size_t size)
  */
 void pfree(void *memptr)
 {
-	void *leftguard, *rightguard, *rightpad, *leftpad;
+	void *leftguard, *rightpad, *leftpad;
 	size_t ptr_off, buflen, rplen, lplen;
 
 	/* Left pad may not exist */
@@ -573,15 +573,12 @@ void pfree(void *memptr)
 	/* Right pad */
 	rightpad = memptr + buflen;
 
-	/* Right guard */
-	rightguard = rightpad + rplen;
-
 	if (rplen)
 		check_magic_number(rightpad, rplen);
 
 	/* Make right guard RW */
-	if (mprotect(rightguard, PAGE_SIZE, PROT_READ|PROT_WRITE) != 0)
-		generate_fault();
+	//if (mprotect(rightguard, PAGE_SIZE, PROT_READ|PROT_WRITE) != 0)
+		//generate_fault();
 
 #ifdef PMALLOC_DEBUG
 	fprintf(stderr, "pfree: %p -->  "
