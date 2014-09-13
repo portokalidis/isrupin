@@ -626,7 +626,7 @@ void *pmalloc(size_t size)
 	}
 
 #ifdef PMALLOC_DEBUG
-	fprintf(stderr, "pmalloc: %lu -->  %lu\n", size, newsize);
+	fprintf(stderr, "pmalloc: %lu -->  %lu %p\n", size, newsize, ptr);
 #endif
 
 	if (lplen)
@@ -641,13 +641,13 @@ void *pmalloc(size_t size)
 
 	if (mprotect(ptr, PAGE_SIZE, PROT_NONE) != 0) {
 		e = errno;
-		fprintf(stderr, "pmalloc/mprotect left failed\n");
+		fprintf(stderr, "pmalloc/mprotect left failed %p\n", ptr);
 		goto release_mem;
 	}
 
 	if (mprotect(ptr + newsize - PAGE_SIZE, PAGE_SIZE, PROT_NONE) != 0) {
 		e = errno;
-		fprintf(stderr, "pmalloc/mprotect right failed\n");
+		fprintf(stderr, "pmalloc/mprotect right failed %p\n", ptr);
 		goto revert_lguard;
 	}
 

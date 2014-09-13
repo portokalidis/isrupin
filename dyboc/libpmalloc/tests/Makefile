@@ -3,8 +3,8 @@ LIBS+=-lpmalloc
 LDFLAGS+=-L../
 
 
-TESTS=memalign malloc calloc realloc
-TESTS2=exhaust
+TESTS=memalign malloc calloc realloc exhaust
+#TESTS2=exhaust
 
 all: $(TESTS) $(TESTS2)
 
