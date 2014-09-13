@@ -9,7 +9,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
-#define BLOCK_SIZE (8192 * 2)
+#define BLOCK_SIZE (1024)
 #define LIMIT (2UL * 1024 * 1024 * 1024)
 //#define LIMIT (2UL * 1024)
 
@@ -63,7 +63,7 @@ int main()
 		allocated += BLOCK_SIZE;
 		total_expected += 2 * PAGE_SIZE + (BLOCK_SIZE & PAGE_MASK) +
 			((BLOCK_SIZE & ~PAGE_MASK)? PAGE_SIZE : 0);
-		maps += 3;
+		maps ++;
 
 		fill_random(buf, BLOCK_SIZE);
 	}
