@@ -4,12 +4,15 @@ LDFLAGS+=-L../
 
 
 TESTS=memalign malloc calloc realloc
+TESTS2=exhaust
 
-
-all: $(TESTS)
+all: $(TESTS) $(TESTS2)
 
 $(TESTS): %: %.c
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LIBS)
+
+$(TESTS2): %: %.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $<
 
 clean:
 	rm -f *.o $(TESTS)

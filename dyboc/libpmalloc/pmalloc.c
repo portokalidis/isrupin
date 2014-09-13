@@ -619,10 +619,15 @@ void *pmalloc(size_t size)
 
 	newsize = size + lplen + rplen + 2 * PAGE_SIZE;
 
-
 	if ((ptr = mmap(NULL, newsize, PROT_READ | PROT_WRITE, 
-			MAP_PRIVATE | MAP_ANONYMOUS, 0, 0)) == (void *)-1)
+			MAP_PRIVATE | MAP_ANONYMOUS, 0, 0)) == (void *)-1) {
+		fprintf(stderr, "pmalloc/mmap failed\n");
 		return NULL;
+	}
+
+#ifdef PMALLOC_DEBUG
+	fprintf(stderr, "pmalloc: %lu -->  %lu\n", size, newsize);
+#endif
 
 	if (lplen)
 		/* Insert magic number in the left pad */
@@ -636,11 +641,13 @@ void *pmalloc(size_t size)
 
 	if (mprotect(ptr, PAGE_SIZE, PROT_NONE) != 0) {
 		e = errno;
+		fprintf(stderr, "pmalloc/mprotect left failed\n");
 		goto release_mem;
 	}
 
 	if (mprotect(ptr + newsize - PAGE_SIZE, PAGE_SIZE, PROT_NONE) != 0) {
 		e = errno;
+		fprintf(stderr, "pmalloc/mprotect right failed\n");
 		goto revert_lguard;
 	}
 
