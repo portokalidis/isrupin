@@ -8,7 +8,7 @@ if (NOT PIN_HOME)
 endif ()
 
 if (NOT EXISTS "${PIN_HOME}/pin")
-	message(FATAL_ERROR "pin not found in ${PIN_HOME}") 
+	message(FATAL_ERROR "`pin' not found in ${PIN_HOME}") 
 endif ()
 
 if (${CMAKE_SYSTEM_NAME} MATCHES Linux)

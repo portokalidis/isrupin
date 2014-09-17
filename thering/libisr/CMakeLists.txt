@@ -13,7 +13,7 @@ include_directories(${PIN_INCLUDES})
 
 # libsqlite3
 find_package(libsqlite3)
-include_directories(${LIBSQLITE3_INCLUDES})
+include_directories(${LIBSQLITE3_INCLUDE_DIRS})
 
 # libisr specific
 set(SOURCES libisr.cpp image.cpp)
