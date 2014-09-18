@@ -1,33 +1,19 @@
-Type "make library" to construct the pmalloc library.
+Run `make' to build everything.
 
-Type "make" to construct a testing instance of the
-library. Edit main.c to test different version of the library.
+libpmalloc.so defines guards before and after allocated buffers. Buffers are
+allocated as close as possible to the right guard to favor early detection of
+overflows. However, alignment requirements for malloc and posix_memalign may
+also introduce right padding. malloc uses a sizeof(void *) alignment, while
+posix_memalign uses the alignment specified by the developer.
 
-To use the pmalloc library, point CFLAGS and LDFLAGS to this directory
-and include the pmalloc library using -lpmalloc. The glib libraries
-also need to be included.
+libpmalloc_under.so defines a guard before allocated buffers. ...
 
-EXAMPLE:
 
-CC = gcc
-OBJS = main.o pmalloc.o
+libpmalloc creates multiple mappings for each allocations. To ensure smooth
+operation the maximum maps count in Linux need to be increased.
 
-all: main
+For the current max count run:
+$ more /proc/sys/vm/max_map_count
 
-main: main.o pmalloc.o
-	$(CC) -Wall -g -o pmalloc $(OBJS) $(LIBS)
-
-main.o: main.c
-	$(CC) -Wall -g -c main.c
-
-pmalloc.o: pmalloc.c
-	gcc -Wall -c -g $(CFLAGS) pmalloc.c
-clean:
-	rm *.o
-	rm libpmalloc.a
-	rm pmalloc
-
-library: pmalloc.o
-	ar -rc libpmalloc.a pmalloc.o
-	ranlib libpmalloc.a
-
+To modify it run (use maximum count possible):
+$ sysctl -w vm.max_map_count=200000) (for example)
