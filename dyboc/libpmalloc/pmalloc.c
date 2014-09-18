@@ -30,6 +30,7 @@ static void *error_page = NULL;
 // Fault generation function to use
 static void (*generate_fault)(void);
 
+#define PBUFER_INFO_LEN (3 * sizeof(size_t *))
 
 /**
  * Set information about pbuffer in the left guard page.
@@ -406,6 +407,7 @@ void *pmalloc(size_t size)
 	/* Meta information set in left guard page */
 	set_pbuffer_info(mapped, 0, size, rplen);
 
+	mark_magic_number(mapped + PBUFER_INFO_LEN, PAGE_SIZE);
 	if (mprotect(mapped, PAGE_SIZE, PROT_NONE) != 0) {
 		e = errno;
 		fprintf(stderr, "Error: pmalloc/mprotect left guard\n");
@@ -418,6 +420,7 @@ void *pmalloc(size_t size)
 	}
 
 #if !defined(PMALLOC_UNDER)
+	mark_magic_number(ptr + size + rplen, PAGE_SIZE);
 	if (mprotect(ptr + size + rplen, PAGE_SIZE, PROT_NONE) != 0) {
 		e = errno;
 		fprintf(stderr, "Error: pmalloc/mprotect right guard\n");
@@ -517,6 +520,7 @@ int pmemalign(void **ptr, size_t alignment, size_t size)
 #endif
 
 	/* Protect left guard page */
+	mark_magic_number(leftguard + PBUFER_INFO_LEN, PAGE_SIZE);
 	if (mprotect(leftguard, PAGE_SIZE, PROT_NONE) != 0) {
 		e = errno;
 		goto release_mem;
@@ -527,6 +531,7 @@ int pmemalign(void **ptr, size_t alignment, size_t size)
 
 #ifndef PMALLOC_UNDER
 	/* Protect right guard page */
+	mark_magic_number(rightguard, PAGE_SIZE);
 	if (mprotect(rightguard, PAGE_SIZE, PROT_NONE) != 0) {
 		e = errno;
 		goto release_mem;
@@ -570,4 +575,9 @@ map_failed:
 #ifdef PMALLOC_WHITELIST
 	whitelist_init();
 #endif
+}
+
+__attribute__((constructor)) void __init()
+{
+	pmalloc_init();
 }
