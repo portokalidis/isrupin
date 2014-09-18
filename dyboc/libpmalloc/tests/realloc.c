@@ -32,7 +32,7 @@ int memcheck(unsigned char *buf, unsigned char byte, size_t len)
 
 int main()
 {
-	void *buf;
+	void *buf = NULL;
 
 	if ((buf = realloc(NULL, 1400)) == NULL) {
 		fprintf(stderr, "realloc: %s\n", strerror(ENOMEM));

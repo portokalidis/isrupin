@@ -34,7 +34,7 @@ static void (*generate_fault)(void);
 /**
  * Set information about pbuffer in the left guard page.
  * Generic image of a pbuffer in memory:
- * |left left pad|left guard|left pad|buf|right pad|right guard|
+ 2 |left left pad|left guard|left pad|buf|right pad|right guard|
  *
  * @param leftguard Pointer to left guard page
  * @param ptr_off Offset from left guard page to beginning of pbuffer
@@ -72,15 +72,29 @@ static void get_pbuffer_info(void *leftguard, size_t *ptr_off,
  */
 static void mark_magic_number(void *ptr, size_t len)
 {
-	void *start, *end;
-	uint32_t magic;
+	unsigned char *start, *end;
 
-	for (start = ptr, end = ptr + len; (start + 3) < end; start += 4) {
-		*(uint32_t *)start = PMALLOC_MAGIC_NUMBER;
+#if 0
+	unsigned char magicc[4] = PMALLOC_MAGIC_NUMBER_STR;
+	size_t counter = 0;
+
+	for (start = (unsigned char *)ptr, end = (unsigned char *)ptr + len; 
+			start < end; start++, counter++) {
+		*start = magicc[counter & 3];
+
+	}
+#else
+	/* XXX: This implementation causes an unexplained SEGFAULT when building
+	 * with -O3, possible due to how gcc unrolls the loop. */
+	uint32_t magic;
+	for (start = (unsigned char *)ptr, end = (unsigned char *)ptr + len; 
+			(start + 3) < end; start += 4) {
+		*(uint32_t *)start = (uint32_t)PMALLOC_MAGIC_NUMBER;
 	}
 	for (magic = PMALLOC_MAGIC_NUMBER; start < end; start++, magic >>= 8) {
 		*(uint8_t *)start = (uint8_t)magic;
 	}
+#endif
 
 }
 
@@ -92,19 +106,15 @@ static void check_magic_number(void *ptr, size_t len)
 	/* Check that the magic values (canaries) are there */
 	for (start = ptr, end = ptr + len; (start + 3) < end; start += 4) {
 		if (*(uint32_t *)start != PMALLOC_MAGIC_NUMBER) {
-#ifdef PMALLOC_DEBUG
-			fprintf(stderr, "unprotect_area: magic number does "
-					"not match\n");
-#endif
+			fprintf(stderr, "pmalloc: magic number "
+					"does not match\n");
 			generate_fault();
 		}
 	}
 	for (magic = PMALLOC_MAGIC_NUMBER; start < end; start++, magic >>= 8) {
 		if (*(uint8_t *)start != (uint8_t)magic) {
-#ifdef PMALLOC_DEBUG
-			fprintf(stderr, "unprotect_area: magic number "
+			fprintf(stderr, "pmalloc: magic number "
 					"does not match\n");
-#endif
 			generate_fault();
 		}
 	}
@@ -134,8 +144,8 @@ static inline void access_error_page()
  */
 void *prealloc(void *memptr, size_t size)
 {
-	void *leftguard, *rightguard, *rightpad, *leftpad, *newptr;
-	size_t ptr_off, buflen, rplen, lplen;
+	void *leftguard, *rightpad, *leftpad, *newptr;
+	size_t ptr_off, buflen, rplen, lplen, real_size;
 
 	/* Left pad may not exist */
 	leftpad = (void *)((unsigned long)memptr & PAGE_MASK);
@@ -156,9 +166,6 @@ void *prealloc(void *memptr, size_t size)
 
 	/* Right pad */
 	rightpad = memptr + buflen;
-
-	/* Right guard */
-	rightguard = rightpad + rplen;
 
 	if (rplen)
 		check_magic_number(rightpad, rplen);
@@ -248,16 +255,19 @@ void *prealloc(void *memptr, size_t size)
 	}
 #endif
 
+	real_size = ptr_off + buflen + lplen + rplen + PAGE_SIZE;
+#ifndef PMALLOC_UNDER
 	/* Make right guard RW */
-	if (mprotect(rightguard, PAGE_SIZE, PROT_READ|PROT_WRITE) != 0)
+	if (mprotect(rightpad + rplen, PAGE_SIZE, PROT_READ|PROT_WRITE) != 0)
 		generate_fault();
+	real_size += PAGE_SIZE;
+#endif
 
 	newptr = pmalloc(size);
 	if (!newptr)
 		return newptr;
 	memcpy(newptr, memptr, MIN(buflen, size));
-	munmap(leftguard - ptr_off, ptr_off + buflen + lplen + 
-			rplen + 2 * PAGE_SIZE);
+	munmap(leftguard - ptr_off, real_size);
 	return newptr;
 }
 
@@ -375,9 +385,10 @@ void *pmalloc(size_t size)
 	/* User buffer */
 	ptr = mapped + PAGE_SIZE + lplen;
 
-	if (lplen)
+	if (lplen) {
 		/* Insert magic number in the left pad */
 		mark_magic_number(mapped + PAGE_SIZE, lplen);
+	}
 
 #ifdef PMALLOC_DEBUG
 	fprintf(stderr, "pmalloc: %lu -->  "
@@ -392,10 +403,6 @@ void *pmalloc(size_t size)
 			ptr);
 #endif
 
-	if (rplen)
-		/* Insert magic number in the right pad */
-		mark_magic_number(ptr + size, rplen);
-
 	/* Meta information set in left guard page */
 	set_pbuffer_info(mapped, 0, size, rplen);
 
@@ -403,6 +410,11 @@ void *pmalloc(size_t size)
 		e = errno;
 		fprintf(stderr, "Error: pmalloc/mprotect left guard\n");
 		goto release_mem;
+	}
+
+	if (rplen) {
+		/* Insert magic number in the right pad */
+		mark_magic_number(ptr + size, rplen);
 	}
 
 #if !defined(PMALLOC_UNDER)
@@ -428,7 +440,7 @@ release_mem:
  * |left_guard|leftpad|aligned_buffer|rightpad|right_guard|
  * PMALLOC_OVER  -> rightpad minimized, but probable will not be zero to achieve
  * alignment
- * PMALLOC_UNDER -> leftpad  = 0
+ * PMALLOC_UNDER -> leftpad  = 0 AND !right_guard
  *
  * @param ptr Allocated aligned buffer
  * @param alignment Requested alignment
@@ -448,8 +460,10 @@ int pmemalign(void **ptr, size_t alignment, size_t size)
 		return EINVAL;
 	}
 
-	real_size = size + 
-		((alignment > PAGE_SIZE)? alignment : PAGE_SIZE) + PAGE_SIZE;
+	real_size = size + ((alignment > PAGE_SIZE)? alignment : PAGE_SIZE);
+#if !defined(PMALLOC_UNDER)
+	real_size += PAGE_SIZE;
+#endif
 	if (real_size & ~PAGE_MASK)
 		/* Align to page size */
 		real_size = (real_size & PAGE_MASK) + PAGE_SIZE; 
@@ -461,13 +475,26 @@ int pmemalign(void **ptr, size_t alignment, size_t size)
 		return e; /* Memory allocation failed */
 	}
 
-	/* Place buffer close to the guard page */
+#ifdef PMALLOC_UNDER
+	/* Place buffer close to the left guard page */
+	lplen = 0;
+	*ptr = mapped + PAGE_SIZE;
+	int align = (unsigned long)*ptr & (alignment - 1);
+	if (align) {
+		align = alignment - align;
+		*ptr += align;
+	}
+	rplen = size & ~PAGE_MASK;
+	if (rplen)
+		rplen = PAGE_SIZE - rplen;
+#else
+	/* Place buffer close to the right guard page */
 	*ptr = mapped + real_size - PAGE_SIZE - size;
 	rplen = (unsigned long)*ptr & (alignment - 1);
 	*ptr -= rplen; /* ptr is now aligned */
-
 	/* Bytes to the beginning of the page */
 	lplen = (unsigned long)*ptr & ~PAGE_MASK;
+#endif
 
 	/* Left guard is on the previous page */
 	leftguard = *ptr - lplen - PAGE_SIZE;
@@ -480,7 +507,13 @@ int pmemalign(void **ptr, size_t alignment, size_t size)
 	fprintf(stderr, "pmemalign: %lu %lu -->  "
 			"|%lu|%lu|*%lu*|%lu|%lu| %p\n",
 			alignment, size,
-			PAGE_SIZE, lplen, size, rplen, PAGE_SIZE, *ptr);
+			PAGE_SIZE, lplen, size, rplen, 
+# ifdef PMALLOC_UNDER
+			0LU,
+# else
+			PAGE_SIZE,
+# endif
+			*ptr);
 #endif
 
 	/* Protect left guard page */
@@ -488,21 +521,21 @@ int pmemalign(void **ptr, size_t alignment, size_t size)
 		e = errno;
 		goto release_mem;
 	}
+	/* Get rid of excess space on the left */
+	if (mapped < leftguard)
+		munmap(mapped, leftguard - mapped);
 
+#ifndef PMALLOC_UNDER
 	/* Protect right guard page */
 	if (mprotect(rightguard, PAGE_SIZE, PROT_NONE) != 0) {
 		e = errno;
 		goto release_mem;
 	}
-
-	/* Get rid of excess space on the left */
-	if (mapped < leftguard)
-		munmap(mapped, leftguard - mapped);
-
 	/* Get rid of excess space on the right */
 	if ((mapped + real_size) >  (rightguard + PAGE_SIZE))
 		munmap(rightguard + PAGE_SIZE, 
 			(rightguard + PAGE_SIZE) - (mapped + real_size));
+#endif
 
 	/* Insert magic number in the left pad */
 	if (lplen)

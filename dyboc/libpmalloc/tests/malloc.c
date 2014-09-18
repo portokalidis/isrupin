@@ -22,6 +22,7 @@ int main()
 {
 	void *buf;
 
+#if 1
 	if ((buf = malloc(1008)) == NULL) {
 		fprintf(stderr, "malloc: %s\n", strerror(ENOMEM));
 		return 1;
@@ -35,6 +36,14 @@ int main()
 	}
 	memset(buf, 'A', 4096);
 	free(buf);
+#endif
+	if ((buf = malloc(4097)) == NULL) {
+		fprintf(stderr, "malloc: %s\n", strerror(ENOMEM));
+		return 1;
+	}
+	memset(buf, 'A', 4097);
+	free(buf);
+
 
 	if ((buf = malloc(1)) == NULL) {
 		fprintf(stderr, "malloc: %s\n", strerror(ENOMEM));

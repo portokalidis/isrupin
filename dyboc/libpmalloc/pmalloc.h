@@ -19,6 +19,7 @@ void pmalloc_init(void);
 //JIKK
 //void dyboc_sig_handler(int sig);
 
-#define PMALLOC_MAGIC_NUMBER	0xdeadbeef
+#define PMALLOC_MAGIC_NUMBER	 0xdeadbeefU
+#define PMALLOC_MAGIC_NUMBER_STR "\xef\xbe\xad\xde"
 
 #endif /* _PMALLOC_H_ */
