@@ -673,18 +673,21 @@ release_mem:
 
 /**
  * Guarded posix_memalign()
- * Goal is
+ * Generic format is:
  * |left_guard|leftpad|aligned_buffer|rightpad|right_guard|
+ * PMALLOC_OVER  -> rightpad minimized, but probable will not be zero to achieve
+ * alignment
+ * PMALLOC_UNDER -> leftpad  = 0
  *
- * @param memptr Allocated aligned buffer
+ * @param ptr Allocated aligned buffer
  * @param alignment Requested alignment
  * @param size Size of requested buffer
  */
-int pmemalign(void **memptr, size_t alignment, size_t size)
+int pmemalign(void **ptr, size_t alignment, size_t size)
 {
+	void *mapped, *leftguard, *rightguard;
+	size_t real_size, rplen, lplen;
 	int e;
-	void *ptr;
-	size_t newsize, rplen, llplen, inner_off = 0;
 
 	/* Check that alignment is a power of two (Bit Twiddling hacks)
 	 * Check that alignment is a multiple of sizeof(void *) */
@@ -694,77 +697,74 @@ int pmemalign(void **memptr, size_t alignment, size_t size)
 		return EINVAL;
 	}
 
-	/* Right pad makes the allocation page aligned */
-	rplen = size & ~PAGE_MASK;
-	if (rplen)
-		rplen = PAGE_SIZE - rplen;
+	real_size = size + 
+		((alignment > PAGE_SIZE)? alignment : PAGE_SIZE) + PAGE_SIZE;
+	if (real_size & ~PAGE_MASK)
+		/* Align to page size */
+		real_size = (real_size & PAGE_MASK) + PAGE_SIZE; 
 
-	if (alignment > PAGE_SIZE) {
-		/* Need additional space in case the area returned is not
-		 * aligned where we want it to be */
-		llplen = alignment - PAGE_SIZE;
-	} else {
-		/* otherwise buffer is going to be already page aligned */
-		llplen = 0;
+	if ((mapped = mmap(NULL, real_size, PROT_READ | PROT_WRITE, 
+			MAP_PRIVATE | MAP_ANONYMOUS, 0, 0)) == MAP_FAILED) {
+		e = errno;
+		fprintf(stderr, "Error: pmemalign/mmap\n");
+		return e; /* Memory allocation failed */
 	}
 
-	/* What we are going to ask for */
-	newsize = size + rplen + 2 * PAGE_SIZE;
+	/* Place buffer close to the guard page */
+	*ptr = mapped + real_size - PAGE_SIZE - size;
+	rplen = (unsigned long)*ptr & (alignment - 1);
+	*ptr -= rplen; /* ptr is now aligned */
 
-	if ((ptr = mmap(NULL, newsize + llplen, PROT_READ | PROT_WRITE, 
-			MAP_PRIVATE | MAP_ANONYMOUS, 0, 0)) == (void *)-1)
-		return errno; /* Memory allocation failed */
+	/* Bytes to the beginning of the page */
+	lplen = (unsigned long)*ptr & ~PAGE_MASK;
 
-	/* Figure out where everything is supposed to be */
-	if (alignment > PAGE_SIZE) {
-		inner_off = ((unsigned  long)ptr + PAGE_SIZE) & 
-			(alignment - 1);
-		if (inner_off == 0) {
-			/* super lucky, perfectly aligned.
-			 * release excess space */
-			munmap(ptr + size + rplen + 2 * PAGE_SIZE, llplen);
-		} else {
-			munmap(ptr, inner_off);
-			ptr += inner_off;
-			munmap(ptr + size + rplen + 2 * PAGE_SIZE, 
-					llplen - inner_off);
-		}
-	}
+	/* Left guard is on the previous page */
+	leftguard = *ptr - lplen - PAGE_SIZE;
+
+	rightguard = *ptr + size + rplen;
+
+	set_pbuffer_info(leftguard, 0, size, rplen);
 
 #ifdef PMALLOC_DEBUG
 	fprintf(stderr, "pmemalign: %lu %lu -->  "
-			"|%lu|%lu|0|*%lu*|%lu|%lu| %p, %lu\n",
-			alignment, size, 
-			llplen, PAGE_SIZE, size,
-			rplen, PAGE_SIZE, ptr, inner_off);
+			"|%lu|%lu|*%lu*|%lu|%lu| %p\n",
+			alignment, size,
+			PAGE_SIZE, lplen, size, rplen, PAGE_SIZE, *ptr);
 #endif
 
-
-	set_pbuffer_info(ptr, 0, size, rplen);
-
 	/* Protect left guard page */
-	if (mprotect(ptr, PAGE_SIZE, PROT_NONE) != 0) {
+	if (mprotect(leftguard, PAGE_SIZE, PROT_NONE) != 0) {
 		e = errno;
 		goto release_mem;
 	}
 
-	/* Insert magic number in the right pad */
-	mark_magic_number(ptr + PAGE_SIZE + size, rplen);
-
 	/* Protect right guard page */
-	if (mprotect(ptr + PAGE_SIZE + size + rplen, 
-				PAGE_SIZE, PROT_NONE) != 0) {
+	if (mprotect(rightguard, PAGE_SIZE, PROT_NONE) != 0) {
 		e = errno;
-		goto release_leftguard;
+		goto release_mem;
 	}
 
-	*memptr = ptr + PAGE_SIZE;
+	/* Get rid of excess space on the left */
+	if (mapped < leftguard)
+		munmap(mapped, leftguard - mapped);
+
+	/* Get rid of excess space on the right */
+	if ((mapped + real_size) >  (rightguard + PAGE_SIZE))
+		munmap(rightguard + PAGE_SIZE, 
+			(rightguard + PAGE_SIZE) - (mapped + real_size));
+
+	/* Insert magic number in the left pad */
+	if (lplen)
+		mark_magic_number(leftguard + PAGE_SIZE, lplen);
+
+	/* Insert magic number in the right pad */
+	if (rplen)
+		mark_magic_number(rightguard - rplen, rplen);
+
 	return 0;
 
-release_leftguard:
-	mprotect(ptr, PAGE_SIZE, PROT_READ | PROT_WRITE);
 release_mem:
-	munmap(ptr, newsize);
+	munmap(mapped, real_size);
 	return e;
 }
 
