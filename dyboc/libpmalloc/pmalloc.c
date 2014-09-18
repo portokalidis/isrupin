@@ -21,7 +21,7 @@
 
 /* Segments allocated with pmalloc will return a user buffer with this 
  * alignment */
-#define PMALLOC_ALIGNMENT (2 * sizeof(void *))
+#define PMALLOC_ALIGNMENT (sizeof(void *))
 
 
 // Special error page for generating faults
@@ -546,15 +546,15 @@ void *prealloc(void *memptr, size_t size)
  * Generic image of a pbuffer in memory:
  * |left left pad|left guard|left pad|buf|right pad|right guard|
  *
- * @param memptr Pointer to user buffer
+ * @param ptr Pointer to user buffer
  */
-void pfree(void *memptr)
+void pfree(void *ptr)
 {
 	void *leftguard, *rightpad, *leftpad;
 	size_t ptr_off, buflen, rplen, lplen;
 
 	/* Left pad may not exist */
-	leftpad = (void *)((unsigned long)memptr & PAGE_MASK);
+	leftpad = (void *)((unsigned long)ptr & PAGE_MASK);
 
 	/* Preceding page is the left guard*/
 	leftguard = leftpad - PAGE_SIZE;
@@ -566,24 +566,23 @@ void pfree(void *memptr)
 	get_pbuffer_info(leftguard, &ptr_off, &buflen, &rplen);
 
 	/* left pad length */
-	lplen = memptr - leftpad;
+	lplen = ptr - leftpad;
 	if (lplen)
 		check_magic_number(leftpad, lplen);
 
 	/* Right pad */
-	rightpad = memptr + buflen;
+	rightpad = ptr + buflen;
 
 	if (rplen)
 		check_magic_number(rightpad, rplen);
 
-	/* Make right guard RW */
-	//if (mprotect(rightguard, PAGE_SIZE, PROT_READ|PROT_WRITE) != 0)
-		//generate_fault();
+	/* No need to unprotect the right guard since we are unmapping the whole
+	 * thing */
 
 #ifdef PMALLOC_DEBUG
 	fprintf(stderr, "pfree: %p -->  "
 			"|%lu|%lu|%lu|*%lu*|%lu|%lu|\n",
-			memptr, ptr_off, 
+			ptr, ptr_off, 
 			PAGE_SIZE, lplen, buflen, rplen, PAGE_SIZE);
 #endif
 
@@ -594,22 +593,24 @@ void pfree(void *memptr)
 
 /**
  * Protected malloc.
- * Goal is protect overflow first
+ * Generic format: 
  * |left_guard|leftpad|buffer|rightpad|right_guard|
+ * PMALLOC_OVER  -> rightpad minimized, but may not be zero due to alignment
+ * issues
+ * PMALLOC_UNDER -> leftpad  = 0
  *
  * @param size Buffer size to allocate
  * @return Pointer to allocated user buffer
  */
 void *pmalloc(size_t size)
 {
-	size_t newsize, lplen, rplen;
-	void *ptr;
+	size_t real_size, lplen, rplen;
+	void *ptr, *mapped;
 	int e;
 
-	/* Calculate padding */
-	lplen = size & ~PAGE_MASK;
+	/* Calculate pads for PMALLOC_OVER */
 	rplen = 0;
-
+	lplen = size & ~PAGE_MASK;
 	if (lplen) {
 		lplen = PAGE_SIZE - lplen;
 		/* Pointer returned to user must be aligned */
@@ -617,54 +618,54 @@ void *pmalloc(size_t size)
 		lplen -= rplen;
 	}
 
-	newsize = size + lplen + rplen + 2 * PAGE_SIZE;
+	/* 2 pages needed as guards */
+	real_size = size + lplen + rplen + 2 * PAGE_SIZE;
 
-	if ((ptr = mmap(NULL, newsize, PROT_READ | PROT_WRITE, 
-			MAP_PRIVATE | MAP_ANONYMOUS, 0, 0)) == (void *)-1) {
-		fprintf(stderr, "pmalloc/mmap failed\n");
+	if ((mapped = mmap(NULL, real_size, PROT_READ | PROT_WRITE, 
+			MAP_PRIVATE | MAP_ANONYMOUS, 0, 0)) == MAP_FAILED) {
+		fprintf(stderr, "Error: pmalloc/mmap\n");
 		return NULL;
 	}
-
-#ifdef PMALLOC_DEBUG
-	fprintf(stderr, "pmalloc: %lu -->  %lu %p\n", size, newsize, ptr);
-#endif
+	/* User buffer */
+	ptr = mapped + PAGE_SIZE + lplen;
 
 	if (lplen)
 		/* Insert magic number in the left pad */
-		mark_magic_number(ptr + PAGE_SIZE, lplen);
+		mark_magic_number(mapped + PAGE_SIZE, lplen);
 
-	if (rplen)
-		/* Insert magic number in the right pad */
-		mark_magic_number(ptr + PAGE_SIZE + lplen + size, rplen);
-
-	set_pbuffer_info(ptr, 0, size, rplen);
-
-	if (mprotect(ptr, PAGE_SIZE, PROT_NONE) != 0) {
-		e = errno;
-		fprintf(stderr, "pmalloc/mprotect left failed %p\n", ptr);
-		goto release_mem;
-	}
-
-	if (mprotect(ptr + newsize - PAGE_SIZE, PAGE_SIZE, PROT_NONE) != 0) {
-		e = errno;
-		fprintf(stderr, "pmalloc/mprotect right failed %p\n", ptr);
-		goto revert_lguard;
-	}
 
 #ifdef PMALLOC_DEBUG
 	fprintf(stderr, "pmalloc: %lu -->  "
 			"|0|%lu|%lu|*%lu*|%lu|%lu| %p\n",
 			size, 
-			PAGE_SIZE, lplen, size, rplen, PAGE_SIZE,
-			ptr + PAGE_SIZE + lplen);
+			PAGE_SIZE, lplen, size, rplen, PAGE_SIZE, ptr);
 #endif
 
-	return (ptr + PAGE_SIZE + lplen);
+	if (rplen)
+		/* Insert magic number in the right pad */
+		mark_magic_number(ptr + size, rplen);
+
+	/* Meta information set in left guard page */
+	set_pbuffer_info(mapped, 0, size, rplen);
+
+	if (mprotect(mapped, PAGE_SIZE, PROT_NONE) != 0) {
+		e = errno;
+		fprintf(stderr, "Error: pmalloc/mprotect left guard\n");
+		goto release_mem;
+	}
+
+	if (mprotect(ptr + size + rplen, PAGE_SIZE, PROT_NONE) != 0) {
+		e = errno;
+		fprintf(stderr, "Error: pmalloc/mprotect right guard\n");
+		goto revert_lguard;
+	}
+
+	return ptr;
 
 revert_lguard:
 	mprotect(ptr, PAGE_SIZE, PROT_READ|PROT_WRITE);
 release_mem:
-	munmap(ptr, newsize);
+	munmap(ptr, real_size);
 	errno = e;
 	return NULL;
 }
