@@ -1,6 +1,4 @@
 CFLAGS+=-Wall -Werror -fPIC -O0 -g
-LIBS+=-lpmalloc
-LDFLAGS+=-L../
 
 
 TESTS=memalign malloc calloc realloc #exhaust

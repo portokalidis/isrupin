@@ -266,16 +266,18 @@ void *prealloc(void *memptr, size_t size)
  * Unprotect guards and call the original free with main pointer.
  * leftguard is always at the page preceding the buffer and contains the
  * information saved with pbuffer_set_info().
- *
  * Generic image of a pbuffer in memory:
  * |left left pad|left guard|left pad|buf|right pad|right guard|
+ * PMALLOC_OVER  -> rightpad minimized, but may not be zero due to alignment
+ * issues
+ * PMALLOC_UNDER -> leftpad  = 0 AND !right_guard
  *
  * @param ptr Pointer to user buffer
  */
 void pfree(void *ptr)
 {
 	void *leftguard, *rightpad, *leftpad;
-	size_t ptr_off, buflen, rplen, lplen;
+	size_t ptr_off, buflen, rplen, lplen, real_size;
 
 	/* Left pad may not exist */
 	leftpad = (void *)((unsigned long)ptr & PAGE_MASK);
@@ -300,6 +302,11 @@ void pfree(void *ptr)
 	if (rplen)
 		check_magic_number(rightpad, rplen);
 
+	real_size = ptr_off + lplen + buflen + rplen + PAGE_SIZE;
+#if !defined(PMALLOC_UNDER)
+	real_size += PAGE_SIZE;
+#endif
+
 	/* No need to unprotect the right guard since we are unmapping the whole
 	 * thing */
 
@@ -307,11 +314,16 @@ void pfree(void *ptr)
 	fprintf(stderr, "pfree: %p -->  "
 			"|%lu|%lu|%lu|*%lu*|%lu|%lu|\n",
 			ptr, ptr_off, 
-			PAGE_SIZE, lplen, buflen, rplen, PAGE_SIZE);
+			PAGE_SIZE, lplen, buflen, rplen, 
+# ifdef PMALLOC_UNDER
+			0LU
+# else
+			PAGE_SIZE
+# endif
+			);
 #endif
 
-	munmap(leftguard - ptr_off, ptr_off + lplen + buflen + 
-			rplen + 2 * PAGE_SIZE);
+	munmap(leftguard - ptr_off, real_size);
 }
 
 
@@ -321,7 +333,7 @@ void pfree(void *ptr)
  * |left_guard|leftpad|buffer|rightpad|right_guard|
  * PMALLOC_OVER  -> rightpad minimized, but may not be zero due to alignment
  * issues
- * PMALLOC_UNDER -> leftpad  = 0
+ * PMALLOC_UNDER -> leftpad  = 0 AND !right_guard
  *
  * @param size Buffer size to allocate
  * @return Pointer to allocated user buffer
@@ -332,6 +344,12 @@ void *pmalloc(size_t size)
 	void *ptr, *mapped;
 	int e;
 
+#ifdef PMALLOC_UNDER
+	lplen = 0; /* Page size is better than whatever PMALLOC_ALIGNMENT */
+	rplen = size & ~PAGE_MASK;
+	if (rplen)
+		rplen = PAGE_SIZE - rplen;
+#else
 	/* Calculate pads for PMALLOC_OVER */
 	rplen = 0;
 	lplen = size & ~PAGE_MASK;
@@ -341,9 +359,13 @@ void *pmalloc(size_t size)
 		rplen = lplen & (PMALLOC_ALIGNMENT - 1);
 		lplen -= rplen;
 	}
+#endif
 
-	/* 2 pages needed as guards */
-	real_size = size + lplen + rplen + 2 * PAGE_SIZE;
+	/* 1 page needed as from under flows */
+	real_size = size + lplen + rplen + PAGE_SIZE;
+#if !defined(PMALLOC_UNDER)
+	real_size += PAGE_SIZE;
+#endif
 
 	if ((mapped = mmap(NULL, real_size, PROT_READ | PROT_WRITE, 
 			MAP_PRIVATE | MAP_ANONYMOUS, 0, 0)) == MAP_FAILED) {
@@ -357,12 +379,17 @@ void *pmalloc(size_t size)
 		/* Insert magic number in the left pad */
 		mark_magic_number(mapped + PAGE_SIZE, lplen);
 
-
 #ifdef PMALLOC_DEBUG
 	fprintf(stderr, "pmalloc: %lu -->  "
-			"|0|%lu|%lu|*%lu*|%lu|%lu| %p\n",
+			"|%lu|%lu|*%lu*|%lu|%lu| %p\n",
 			size, 
-			PAGE_SIZE, lplen, size, rplen, PAGE_SIZE, ptr);
+			PAGE_SIZE, lplen, size, rplen, 
+# ifdef PMALLOC_UNDER
+			0LU,
+# else
+			PAGE_SIZE,
+# endif
+			ptr);
 #endif
 
 	if (rplen)
@@ -378,18 +405,18 @@ void *pmalloc(size_t size)
 		goto release_mem;
 	}
 
+#if !defined(PMALLOC_UNDER)
 	if (mprotect(ptr + size + rplen, PAGE_SIZE, PROT_NONE) != 0) {
 		e = errno;
 		fprintf(stderr, "Error: pmalloc/mprotect right guard\n");
-		goto revert_lguard;
+		goto release_mem;
 	}
+#endif
 
 	return ptr;
 
-revert_lguard:
-	mprotect(ptr, PAGE_SIZE, PROT_READ|PROT_WRITE);
 release_mem:
-	munmap(ptr, real_size);
+	munmap(mapped, real_size);
 	errno = e;
 	return NULL;
 }

@@ -50,7 +50,6 @@ int main()
 	memset(buf, 'A', 4095);
 	free(buf);
 
-
 	return 0;
 }
 
