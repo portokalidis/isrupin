@@ -1737,12 +1737,25 @@ static VOID SysEnter(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v)
 			ERRLOG(ss);
 		}
 #else
-		stringstream ss;
+		const char *sysname = "(none)";
+		switch (ts->in_syscall) {
+		case 2: // fork
+			sysname = "fork";
+			goto warn;
+		case 11:
+			sysname = "execve";
+			goto warn;
+		case 120: // clone
+			sysname = "clone";
+warn:
+			OUTLOG("PIN [" + decstr(tid) + "] WARNING dangerous "
+					"system call " + sysname + "\n");
+			break;
 
-		ss << "PIN [" << tid << "] WARNING performing system "
-			"call " << ts->in_syscall << " in checkpoint" 
-			<< endl;
-		OUTLOG(ss);
+		default:
+			break;
+		}
+
 #endif
 	}
 }
