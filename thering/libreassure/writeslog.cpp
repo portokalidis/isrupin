@@ -49,6 +49,8 @@ struct writeslog *WLogAlloc(UINT32 hint)
 	// Apply hint for size if not zero
 	len = (hint > 0)? hint : WLOG_BLOCK_SIZE_MIN;
 	wlog->block = wlog->size = len;
+	wlog->segs = NULL;
+	wlog->idx = wlog->end = NULL;
 
 	// Allocate a segment
 	WLogSegAlloc(wlog, len);

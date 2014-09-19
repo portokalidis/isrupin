@@ -1218,7 +1218,7 @@ static VOID CheckpointInstrument(TRACE trace, RescuePoint *rp)
 				MemWriteHandler(ins, NULL);
 
 			if (INS_IsRet(ins) && rp) {
-				DBGLOG("Installing Checkpoint return\n");
+				OUTLOG("Installing Checkpoint return\n");
 				INS_InsertCall(ins, IPOINT_BEFORE, 
 					(AFUNPTR)CheckpointReturn,
 					IARG_REG_VALUE, tsreg, 
@@ -1749,7 +1749,9 @@ static VOID SysEnter(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v)
 			sysname = "clone";
 warn:
 			OUTLOG("PIN [" + decstr(tid) + "] WARNING dangerous "
-					"system call " + sysname + "\n");
+		"system call (" + decstr(ts->in_syscall) + ") " + sysname + " in " + 
+		RTN_FindNameByAddress(PIN_GetContextReg(ctx, REG_INST_PTR)) +
+					"\n");
 			break;
 
 		default:

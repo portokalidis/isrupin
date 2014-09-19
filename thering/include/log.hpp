@@ -61,6 +61,12 @@ static inline void DBGLOG(const string &s)
 	LOGSTR("DEBUG: " + s);
 }
 
+static inline void DBGLOG(stringstream &ss)
+{
+	DBGLOG(ss.str());
+	ss.str("");
+}
+
 static inline void TIDDLOG(THREADID tid, const string &s)
 {
 	LOGSTR("DEBUG: PIN [" + decstr(tid) + "] " + s);
