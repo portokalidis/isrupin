@@ -1,4 +1,4 @@
-CFLAGS:=-O3 -Wall -Werror -I../libpmalloc 
+CFLAGS:=-O2 -Wall -Werror -I../libpmalloc 
 #CFLAGS+=-DMONITOR_DEBUG 
 
 MONITOR_OBJS:=monitor.o child.o
