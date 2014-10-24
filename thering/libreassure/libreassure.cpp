@@ -1199,7 +1199,13 @@ static VOID MemWriteHandler(INS ins, VOID *v)
 		WLogWritesHandler(ins, width);
 }
 
-static VOID CheckpointInstrument(TRACE trace, RescuePoint *rp)
+/*
+ * Instrument code in checkpointing mode
+ *
+ * @param trace Pin trace to instrument
+ * @param rp Rescue point doing the checkpointing for
+ */
+static VOID checkpoint_instrument(TRACE trace, RescuePoint *rp)
 {
 	INS ins;
 	BBL bbl;
@@ -1218,7 +1224,9 @@ static VOID CheckpointInstrument(TRACE trace, RescuePoint *rp)
 				MemWriteHandler(ins, NULL);
 
 			if (INS_IsRet(ins) && rp) {
-				OUTLOG("Installing Checkpoint return\n");
+				OUTLOG("Installing Checkpoint return for " +
+					rp->name() + " at " +
+					hexstr(INS_Address(ins)) + "\n");
 				INS_InsertCall(ins, IPOINT_BEFORE, 
 					(AFUNPTR)CheckpointReturn,
 					IARG_REG_VALUE, tsreg, 
@@ -1227,6 +1235,11 @@ static VOID CheckpointInstrument(TRACE trace, RescuePoint *rp)
 					IARG_ADDRINT, rp->returnValue(),
 					IARG_RETURN_REGS, version_reg,
 					IARG_END);
+				/* 
+				 * Using this ensures the next BBL switches
+				 * version, instead of using
+				 * INS_InsertVersionCase() which switches
+				 * immediately. */
 				BBL_SetTargetVersion(bbl, NORMAL_VERSION);
 			}
 		}
@@ -1385,27 +1398,34 @@ static VOID trace_instrument(TRACE trace, VOID *v)
 	if (version == NORMAL_VERSION) {
 		// First trace in RP
 		if (rp && rp->address() == addr) {
-			ss << "Installing rescue point for " << rp << endl;
-			OUTLOG(ss);
+			OUTLOG("Installing rescue point for "
+					+ rp->name() + "\n");
+
+			INS first_ins = BBL_InsHead(TRACE_BblHead(trace));
 
 			// Insert code to enter the checkpoint
-			INS_InsertCall(BBL_InsHead(TRACE_BblHead(trace)), 
+			INS_InsertCall(first_ins, 
 					IPOINT_BEFORE, (AFUNPTR)Checkpoint, 
 					IARG_REG_VALUE, tsreg, 
 					IARG_CONST_CONTEXT, IARG_PTR, rp,
 					IARG_RETURN_REGS, version_reg,
 					IARG_END);
-			// Switch to checkpointing version
-			BBL_SetTargetVersion(TRACE_BblHead(trace), 
-					CHECKPOINT_VERSION);
 
-			// The rest of the code should also be instrumented for
-			// checkpointing
-			CheckpointInstrument(trace, rp);
+			/*
+			 * Using this switches to checkpointing immediately,
+			 * instead of using BBL_SetTargetVersion(), which
+			 * changes at the next BBL. For this, reason, we do not
+			 * instrument these instructions, since it will be done
+			 * on the next call of this function.
+			 */
+			INS_InsertVersionCase(first_ins, version_reg, 
+					CHECKPOINT_VERSION, 
+					CHECKPOINT_VERSION, 
+					IARG_END);
 		} 
 	} else if (version == CHECKPOINT_VERSION) {
 		// Instrument code with checkpointing code
-		CheckpointInstrument(trace, rp);
+		checkpoint_instrument(trace, rp);
 	}
 }
 
