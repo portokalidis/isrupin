@@ -8,7 +8,7 @@ option(USE_DTA "Enable DTA module" ON)
 option(SAFECOPY_RESTORE "REASSURE uses safecopy to restore checkpoints" ON)
 option(BLOCKINGRP "REASSURE supports blocking rescue points" ON)
 option(DEBUG "Enable debugging" OFF)
-option(MINESTRONE "Use minestrone-style reporting and watchdog" OFF)
+option(MINESTRONE "Use minestrone-style reporting and watchdog" ON)
 
 # Build type
 if (DEBUG)
