@@ -1739,6 +1739,46 @@ static BOOL BlockThreadHandler(THREADID tid, INT32 sig, CONTEXT *ctx,
 }
 #endif //BLOCKINGRP
 
+/**
+ * Return a string describing where the PC is. The string follows the format
+ * image_name:function_name.
+ *
+ * @param pc program counter
+ *
+ * @return Descriptive string
+ */
+static string get_pc_info(ADDRINT pc)
+{
+	string fname = RTN_FindNameByAddress(pc);
+	IMG img = IMG_FindByAddress(pc);
+	string iname = "";
+
+	if (IMG_Valid(img))
+		iname = IMG_Name(img);
+
+	return iname + ":" + fname;
+}
+
+/**
+ * Print a warning message for a dangerous system call within a checkpoint.
+ *
+ * @param tid 		Thread ID
+ * @param ctx 		CPU context
+ * @param ts		Thread state
+ * @param sysname	Name of the system call
+ */
+static void syscall_warn(THREADID tid, const CONTEXT *ctx, 
+		const struct thread_state *ts,
+		const string &sysname)
+{
+	ADDRINT pc = PIN_GetContextReg(ctx, REG_INST_PTR);
+
+	OUTLOG("PIN [" + decstr(tid) + "] WARNING dangerous "
+		"system call (" + 
+		decstr(ts->in_syscall) + ") " + sysname + 
+		" in " + get_pc_info(pc) + "\n");
+}
+
 static VOID SysEnter(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v)
 {
 	struct thread_state *ts;
@@ -1768,10 +1808,7 @@ static VOID SysEnter(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v)
 		case 120: // clone
 			sysname = "clone";
 warn:
-			OUTLOG("PIN [" + decstr(tid) + "] WARNING dangerous "
-		"system call (" + decstr(ts->in_syscall) + ") " + sysname + " in " + 
-		RTN_FindNameByAddress(PIN_GetContextReg(ctx, REG_INST_PTR)) +
-					"\n");
+			syscall_warn(tid, ctx, ts, sysname);
 			break;
 
 		default:
@@ -1896,15 +1933,13 @@ static bool GenericFaultHandler(struct thread_state *ts, CONTEXT *ctx)
 	stringstream ss;
 
 	if (ts->state == ROLLINGBACK) {
-		ss << "PIN [" << ts->tid << "] "
-			"Fault while rolling back!" << endl <<
-			"Submit a bug report!" << endl;
-		ERRLOG(ss);
+		ERRLOG("PIN [" + decstr(ts->tid) + "] Fault while rolling "
+				"back!\nSubmit a bug report!\n");
 		return false;
 	} else if (ts->state != CHECKPOINTING) {
-		ss << "PIN [" << ts->tid << "] Fault "
-			"outside a rescue point" << endl;
-		OUTLOG(ss);
+		ADDRINT pc = PIN_GetContextReg(ctx, REG_INST_PTR);
+		OUTLOG("PIN [" + decstr(ts->tid) + "] Fault outside a rescue "
+				"point: " + get_pc_info(pc) + "\n");
 		return false;
 	}
 
