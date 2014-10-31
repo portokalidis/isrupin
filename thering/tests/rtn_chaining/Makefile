@@ -1,7 +1,7 @@
 CC=gcc
-CFLAGS=-O2 -g -Wall
+CFLAGS=-O2 -g -Wall -fno-inline
 
-TARGETS=fork fork2 fork3
+TARGETS=rtn
 
 all: $(TARGETS)
 

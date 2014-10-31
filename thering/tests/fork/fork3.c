@@ -23,6 +23,8 @@ static int run_child()
 	fclose(fl);
 	printf("CHILD read: %d chars\n", charcount);
 
+	*((char *)((long)line | ~0xfffffff))  = (char)'a';
+
 	return 0xc;
 }
 

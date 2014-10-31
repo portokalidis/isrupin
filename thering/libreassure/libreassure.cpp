@@ -1389,9 +1389,10 @@ static VOID trace_instrument(TRACE trace, VOID *v)
 	rp = find_rp(addr);
 
 	if (rp && rp->retAddress() == 0) {
-		ERRLOG("Found a RP but it is not associated with a RET "
-			"and it will be ignored\n");
 		rp = NULL;
+		/* Hopefully we managed to avoid including bad RPs earlier */
+		ERRLOG("RP for " + rp->name() + 
+				" is not associated with an RP\n");
 	}
 
 	// Instrument code not checkpointing
@@ -1502,12 +1503,18 @@ static void find_rtn_rp(RTN rtn)
 	rp->setAddress(addr);
 	rp->setEndAddress(addr + RTN_Size(rtn) - 1);
 
-	// Now that we know it's address, make sure we can find it  easily
-	rescue_points_byaddr.insert(
-			pair<ADDRINT, RescuePoint *>(rp->endAddress(), rp));
-
 	// Find a RET instruction for this routine
-	find_rtn_rp_ret(rtn, rp);
+	if (find_rtn_rp_ret(rtn, rp))  {
+		// Now that we know it's address, make sure we can find it 
+		// easily
+		rescue_points_byaddr.insert(pair<ADDRINT, RescuePoint *>
+				(rp->endAddress(), rp));
+	} else {
+		// if not ignore it
+		WARNLOG("RP for " + rp->name() + " could not be associated with"
+				" a RET and will be ignored\n");
+	}
+
 
 #ifdef RESCUE_POINT_DEBUG
 	ss << "RP: " << rp << " resolved name to address" << endl;
@@ -1586,6 +1593,15 @@ static void find_image_rps_ret(ADDRINT start_addr, ADDRINT end_addr)
 			continue;
 
 		RTN_Open(rtn);
+		/* Since we may be looking at code different from the one this
+		 * RP was intended for, it will cause the RP to never be
+		 * triggered, so we don't do anything radical if not RET is
+		 * found. 
+		 *
+		 * If the user has managed to configured the
+		 * wrong RP for the an existing BBL entry point, then unexpected
+		 * things may happen.
+		 */
 		find_rtn_rp_ret(rtn, rp);
 		RTN_Close(rtn);
 	}
@@ -1663,9 +1679,8 @@ static VOID ThreadStart(THREADID tid, CONTEXT *ctx, INT32 flags, VOID *v)
 	if (version == AUTOCORRECT_VERSION) {
 		PIN_SetContextReg(ctx, version_reg, NORMAL_VERSION);
 #ifdef VERSION_DEBUG
-		ss << "Thread " << tid << " switched to version " << 
-			NORMAL_VERSION << endl;
-		DBGLOG(ss);
+		DBGLOG("Thread " + decstr(tid) + " switched to version " +
+			decstr(NORMAL_VERSION) + "\n");
 #endif
 	}
 
@@ -1799,15 +1814,8 @@ static VOID SysEnter(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v)
 #else
 		const char *sysname = "(none)";
 		switch (ts->in_syscall) {
-		case 2: // fork
-			sysname = "fork";
-			goto warn;
-		case 11:
-			sysname = "execve";
-			goto warn;
-		case 120: // clone
+		case SYS_clone: // clone
 			sysname = "clone";
-warn:
 			syscall_warn(tid, ctx, ts, sysname);
 			break;
 
@@ -1881,12 +1889,16 @@ static VOID Fork(THREADID tid, const CONTEXT *ctx, VOID *v)
 	type = (fork_checkpoints)? FORK_CHECKP : WLOG_CHECKP;
 
 	if (ts->state != NORMAL) {
-		ERRLOG("Fork while in checkpoint not supported\n");
-		PIN_ExitProcess(1);
+		const char *str = "WARNING: Fork while checkpointing lead to "
+			"long RPs and reduce performance\n";
+		cerr << str;
+		WARNLOG(str);
 	}
 
 	PIN_GetLock(&tsmap_lock, tid + 1);
 	// Delete all other threads except myself
+	// XXX: Here we are assuming that thread 0 is actually the one forking,
+	// which is probably wrong. so mixing fork and threads is problematic
 	for (it = tsmap.begin(); it != tsmap.end(); ) {
 		tsit = (*it).second;
 		if (tsit == ts) {
@@ -2119,10 +2131,10 @@ no_scratch_reg:
 	}
 #endif // BLOCKINGRP
 
-	PIN_AddFiniFunction(Fini, 0);
 #ifdef TARGET_LINUX
 	PIN_AddForkFunction(FPOINT_AFTER_IN_CHILD, Fork, 0);
 #endif
+	PIN_AddFiniFunction(Fini, 0);
 
 	return 0;
 }
