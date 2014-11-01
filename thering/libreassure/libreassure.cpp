@@ -1897,8 +1897,6 @@ static VOID Fork(THREADID tid, const CONTEXT *ctx, VOID *v)
 
 	PIN_GetLock(&tsmap_lock, tid + 1);
 	// Delete all other threads except myself
-	// XXX: Here we are assuming that thread 0 is actually the one forking,
-	// which is probably wrong. so mixing fork and threads is problematic
 	for (it = tsmap.begin(); it != tsmap.end(); ) {
 		tsit = (*it).second;
 		if (tsit == ts) {
