@@ -179,6 +179,10 @@ static BOOL fault_handler(THREADID tid, CONTEXT *ctx,
 				minestrone_notify(CWE_NULLPOINTER,
 						"CONTINUED_EXECUTION",
 						"DOS_INSTABILITY");
+			} else {
+				minestrone_notify(0,
+						"CONTINUED_EXECUTION",
+						"DOS_INSTABILITY");
 			}
 # endif
 			if (internal)
@@ -257,9 +261,12 @@ static BOOL signal_handler(THREADID tid, INT32 sig, CONTEXT *ctx,
 			minestrone_notify(CWE_CI, "CONTROLLED_EXIT",
 					"EXECUTE_UNAUTHORIZED_CODE");
 		}
-		minestrone_log_status(ES_SUCCESS, EXIT_SUCCESS);         
-		PIN_ExitProcess(EXIT_FAILURE);
+	} else {
+		// Log a controlled exit message
+		minestrone_notify(0, "CONTROLLED_EXIT", "DOS_INSTABILITY");
 	}
+	minestrone_log_status(ES_SUCCESS, EXIT_SUCCESS);         
+	PIN_ExitProcess(EXIT_FAILURE);
 #endif
         return TRUE;
 }
