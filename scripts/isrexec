@@ -1,18 +1,18 @@
 #!/bin/bash
 
 
-if [[ -z "$THERING_HOME" || ! -d "$THERING_HOME" ]]; then
-	echo "THERING_HOME variable is not set"
+if [[ -z "$ISR_HOME" || ! -d "$ISR_HOME" ]]; then
+	echo "ISR_HOME variable is not set"
 	exit 1
 fi
-if [[ ! -r "$THERING_HOME/thering.conf" ]]; then
-	echo "THERING_HOME not set properly. Cannot find thering.conf"
+if [[ ! -r "$ISR_HOME/isr.conf" ]]; then
+	echo "ISR_HOME not set properly. Cannot find isr.conf"
 	exit 1
 fi
 
 
-. $THERING_HOME/thering.conf
-. $THERING_HOME/scripts/functions.sh
+. $ISR_HOME/isr.conf
+. $ISR_HOME/scripts/functions.sh
 
 verbose=0
 
@@ -84,16 +84,16 @@ param=$@
 
 # Encode binary
 if [ $verbose -gt 0 ]; then
-	echo "$THERING_HOME/scripts/isrencode -r $bin"
+	echo "$ISR_HOME/scripts/isrencode -r $bin"
 fi
-encname=`$THERING_HOME/scripts/isrencode -r $bin`
+encname=`$ISR_HOME/scripts/isrencode -r $bin`
 
 if [ ! -r "$encname" ]; then
 	echo "Could not encode '$bin'"
 	exit 1
 fi
 
-cmd="pin $PIN_OPTIONS -t $THERING_HOME/$WRAPPER_TOOL $TOOL_OPTIONS $tool_options -- $THERING_HOME/$WRAPPER $encname $param"
+cmd="pin $PIN_OPTIONS -t $ISR_HOME/$WRAPPER_TOOL $TOOL_OPTIONS $tool_options -- $ISR_HOME/$WRAPPER $encname $param"
 echo "$cmd"
 
 # Run PIN

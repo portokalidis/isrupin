@@ -1,16 +1,16 @@
 #!/bin/bash 
 
-if [[ -z "$THERING_HOME" || ! -d "$THERING_HOME" ]]; then
-	echo "THERING_HOME variable is not set"
+if [[ -z "$ISR_HOME" || ! -d "$ISR_HOME" ]]; then
+	echo "ISR_HOME variable is not set"
 	exit 1
 fi
-if [[ ! -r "$THERING_HOME/thering.conf" ]]; then
-	echo "THERING_HOME not set properly. Cannot find thering.conf"
+if [[ ! -r "$ISR_HOME/isr.conf" ]]; then
+	echo "ISR_HOME not set properly. Cannot find isr.conf"
 	exit 1
 fi
 
-. $THERING_HOME/thering.conf
-. $THERING_HOME/scripts/functions.sh
+. $ISR_HOME/isr.conf
+. $ISR_HOME/scripts/functions.sh
 
 
 if [ $# -lt 1 ]; then

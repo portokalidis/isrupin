@@ -29,6 +29,11 @@ else ()
 	option(ISOLATION "Isolate memory with ISR" ON)
 endif ()
 
+configure_file(setup.sh setup.sh COPYONLY)
+configure_file(isr.conf isr.conf COPYONLY)
+configure_file(image_keys.sql image_keys.sql COPYONLY)
+file(COPY scripts DESTINATION .)
+file(COPY bin DESTINATION .)
 
 add_subdirectory(libcrossdev)
 add_subdirectory(tools)

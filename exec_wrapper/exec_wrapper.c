@@ -5,7 +5,7 @@
 #include <string.h>
 #include <assert.h>
 
-#define ISR_HOME	"THERING_HOME"
+#define ISR_HOME	"ISR_HOME"
 #define LD_LIB_PATH	"LD_LIBRARY_PATH"
 
 

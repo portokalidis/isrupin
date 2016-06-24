@@ -32,14 +32,14 @@ add_library(isrtool SHARED ${SOURCES})
 set_target_properties(isrtool PROPERTIES PREFIX "") # drop 'lib' prefix
 target_link_libraries(isrtool ${LIBISR_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT}
 					${LIBSQLITE3_LIBRARIES})
-#target_link_libraries(thering ${CMAKE_THREAD_LIBS_INIT})
+#target_link_libraries(isrtool ${CMAKE_THREAD_LIBS_INIT})
 target_link_libraries(isrtool ${LIBCROSSDEV_LIBRARIES})
 target_link_libraries(isrtool ${PIN_LDFLAGS} ${PIN_LIBS})
 
 
 # wrapper
 add_definitions(-DISR_WRAPPER_NAME="isr_wrapper")
-add_definitions(-DISR_NAME="thering")
+add_definitions(-DISR_NAME="isrtool")
 add_library(isr_wrapper SHARED isr_wrapper.cpp cmdln.cpp)
 set_target_properties(isr_wrapper PROPERTIES PREFIX "")
 target_link_libraries(isr_wrapper ${PIN_LDFLAGS} ${PIN_LIBS})
