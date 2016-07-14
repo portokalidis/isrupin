@@ -13,7 +13,7 @@ extern "C" {
 #include <stdint.h>
 #include <string.h>
 #include <sys/mman.h>
-#include <linux/limits.h>
+#include <limits.h>
 #include <errno.h>
 #include <elf.h>
 #include <sys/types.h>
@@ -141,7 +141,7 @@ static BOOL GetImageKey(const char *path, Image *img)
 	r = sqlite3_prepare_v2(db, sqlstr, -1, &stmt, NULL);
 	if (r != SQLITE_OK) {
 query_error:
-		sstr << "SQLite error querying keys db: " << 
+		sstr << "SQLite error querying keys db: " <<
 			sqlite3_errmsg(db) << endl;
 		ERRLOG(sstr);
 		sqlite3_close(db);
@@ -191,14 +191,14 @@ static Image *FindExecutableImageByAddr(ADDRINT addr)
 			if (addr <= img->high_addr)
 				return img;
 		} else
-			// The map is ordered so there are no more 
+			// The map is ordered so there are no more
 			// possible matches
 			break;
 	}
 	return NULL;
 }
 
-static inline bool TryDeleteExecutableImage(Image *img, 
+static inline bool TryDeleteExecutableImage(Image *img,
 		ADDRINT low, ADDRINT high)
 {
 	// Image:              |--------------|
@@ -206,7 +206,7 @@ static inline bool TryDeleteExecutableImage(Image *img,
 	// Delete case 2:               |---------|
 	// Delete case 3:          |----|
 	// Delete case 4:   |----------------------|
-	
+
 	if (low <= img->low_addr && img->low_addr <= high) {
 		// Case 1 & 4. Low addr of image in delete segment
 		// Adjust it!
@@ -218,13 +218,13 @@ static inline bool TryDeleteExecutableImage(Image *img,
 	} else if (low > img->low_addr && high < img->high_addr) {
 		// Case 3. Delete segment within image.
 		// Requires splitting the image
-		
+
 		// Create new image for high address part
 		Image *newimg = new Image(high + 1, img->high_addr);
 		newimg->SetKey(img->key);
 		image_map.insert(pair<ADDRINT, Image *>(high + 1, newimg));
 
-		// Resize low address part 
+		// Resize low address part
 		img->high_addr = low - 1;
 		return false;
 	}
@@ -253,14 +253,14 @@ static VOID DeleteExecutableImage(ADDRINT low, ADDRINT high)
 		if (TryDeleteExecutableImage(img, low, high)) {
 			// There was a match. Delete this entry
 			image_map.erase(prev_it);
-		
+
 			// Make sure the cache remains valid
 			if (unlikely(img == last_fetch_img))
 				last_fetch_img = NULL;
 
 			delete img;
 		} else if (img->low_addr > high)
-			// The map is ordered so there are no more 
+			// The map is ordered so there are no more
 			// possible matches
 			break;
 	}
@@ -268,7 +268,7 @@ static VOID DeleteExecutableImage(ADDRINT low, ADDRINT high)
 
 // Create new image and add it in the image map.
 // low and high addresses are inclusive
-static Image *AddExecutableImage(const string &name, 
+static Image *AddExecutableImage(const string &name,
 		ADDRINT low, ADDRINT high)
 {
 	stringstream sstr;
@@ -356,7 +356,7 @@ static VOID mp_set(ADDRINT start, ADDRINT size, UINT8 val)
 	// E.g., the VDSO may reside in kernel space, but it's r-x only
         if (start > KERNEL_BOUNDARY) {
 #ifdef MP_DEBUG
-                sstr << "Attempting to protect kernel memory " << (void *)start 
+                sstr << "Attempting to protect kernel memory " << (void *)start
 			<< '-' << (void *)(stop << 12) << endl;
 		DBGLOG(sstr);
 #endif
@@ -396,7 +396,7 @@ static VOID InvalidAccess(CONTEXT *ctx, THREADID tid, ADDRINT addr, UINT32 sz)
 	EXCEPTION_INFO einfo;
 
 #ifdef MP_DEBUG
-	sstr << "WARNING: MP Exception at " << (void *)addr << 
+	sstr << "WARNING: MP Exception at " << (void *)addr <<
 		'(' << sz << ')' << endl;
 	ERRLOG(sstr);
 #endif
@@ -494,7 +494,7 @@ static inline VOID MemoryIsolate(INS ins, VOID *v)
 		INS_InsertIfPredicatedCall(ins, IPOINT_BEFORE,
 				(AFUNPTR)CheckNByteAccess,
 				IARG_FAST_ANALYSIS_CALL,
-				IARG_MEMORYWRITE_EA, IARG_MEMORYWRITE_SIZE, 
+				IARG_MEMORYWRITE_EA, IARG_MEMORYWRITE_SIZE,
 				IARG_END);
 		goto thencall;
 	}
@@ -620,7 +620,7 @@ static VOID SyscallExit(THREADID tid, CONTEXT *ctx,
 
 		if ((prot | PROT_EXEC) && !(prot & PROT_WRITE) && fd >= 0) {
 			if (ResolveFd(fdpath, fd)) {
-				sstr << "Mapping image " << hex << 
+				sstr << "Mapping image " << hex <<
 					(ret & ~PAGEOFF_MASK) << '-' <<
 					((ret + len - 1) | PAGEOFF_MASK) <<
 					' ' << fdpath << endl;
@@ -731,7 +731,7 @@ static bool IsTrampoline(ADDRINT addr, void *buf, size_t size)
 #endif
 	int r;
 
-	// Make sure we are in a signal handler, and it can fit in the 
+	// Make sure we are in a signal handler, and it can fit in the
 	// instruction buffer
 	if (likely(!sighandler || size < SIGTRAMPOLINE_LEN))
 		return FALSE;
@@ -765,10 +765,10 @@ static VOID InstrumentTrace(TRACE trace, VOID *v)
 	string dis;
 
 	if (do_disas) {
-		for (bbl = TRACE_BblHead(trace); 
-				BBL_Valid(bbl); 
+		for (bbl = TRACE_BblHead(trace);
+				BBL_Valid(bbl);
 				bbl = BBL_Next(bbl)) {
-			for (ins = BBL_InsHead(bbl); 
+			for (ins = BBL_InsHead(bbl);
 					INS_Valid(ins);
 					ins = INS_Next(ins)) {
 				dis = INS_Disassemble(ins);
@@ -794,7 +794,7 @@ static VOID InstrumentTrace(TRACE trace, VOID *v)
 	} else if (FindExecutableImageByAddr(addr) != NULL)
 		img_found = TRUE;
 	if (!img_found) {
-		for (bbl = TRACE_BblHead(trace); BBL_Valid(bbl); 
+		for (bbl = TRACE_BblHead(trace); BBL_Valid(bbl);
 				bbl = BBL_Next(bbl)) {
 			for (ins = BBL_InsHead(bbl); INS_Valid(ins);
 					ins = INS_Next(ins)) {
@@ -802,8 +802,8 @@ static VOID InstrumentTrace(TRACE trace, VOID *v)
 				if (addr >= tramp.low && addr < tramp.high)
 					continue;
 				INS_InsertCall(ins, IPOINT_BEFORE,
-						(AFUNPTR)CodeInjection, 
-						IARG_CONST_CONTEXT, 
+						(AFUNPTR)CodeInjection,
+						IARG_CONST_CONTEXT,
 						IARG_THREAD_ID,
 						IARG_END);
 			}
@@ -870,7 +870,7 @@ static void ProcessMMaps(void)
 			mp_set(low, high - low, 0);
 #endif
 
-		} 
+		}
 #ifdef ISOLATE_MEMORY
 		// All memory maps initially belong to Pin,
 		// except the stack and heap
@@ -938,12 +938,12 @@ bool libisr_known_image(ADDRINT addr)
 	return (FindExecutableImageByAddr(addr) != NULL);
 }
 
-bool libisr_code_injection(INT32 sig, const CONTEXT *ctx, 
+bool libisr_code_injection(INT32 sig, const CONTEXT *ctx,
 		const EXCEPTION_INFO *pExceptInfo)
 {
 	ADDRINT feip;
 	unsigned char tmpbuf[1];
-	
+
 	feip = PIN_GetContextReg(ctx, REG_INST_PTR);
 
 	// We are trying to execute unknown code, from a memory
@@ -988,7 +988,7 @@ static void DecodeInstruction(ADDRINT addr, void *buf, size_t size)
 		//xed_decoded_inst_dump(&xedd, xedbuf, sizeof(xedbuf));
 		xed_format_att(&xedd, xedbuf, sizeof(xedbuf), addr + off);
 		xedbuf[sizeof(xedbuf) - 1] = '\0';
-		sstr << "XED  " << (void *)(addr + off) << 
+		sstr << "XED  " << (void *)(addr + off) <<
 			": " << xedbuf << endl;
 		DBGLOG(sstr);
 		off += xed_decoded_inst_get_length(&xedd);
@@ -1043,7 +1043,7 @@ static size_t FetchInstruction(void *buf, ADDRINT addr, size_t size,
 			sprintf(hbuf + i*2, "%02x",
 					(int)*((UINT8 *)buf + i));
 		hbuf[effective_size * 2] = '\0';
-		sstr << "Decoding " << (void *)addr << "=" << 
+		sstr << "Decoding " << (void *)addr << "=" <<
 			hbuf << endl;
 		DBGLOG(sstr);
 		sstr.str("");
@@ -1067,7 +1067,7 @@ static size_t FetchInstruction(void *buf, ADDRINT addr, size_t size,
 		sprintf(hbuf + i*2, "%02x",
 				(int)*((UINT8 *)buf + i));
 	hbuf[effective_size * 2] = '\0';
-	sstr << "Decoded " << (void *)addr << "=" << 
+	sstr << "Decoded " << (void *)addr << "=" <<
 		hbuf << endl;
 	DBGLOG(sstr);
 	sstr.str("");
@@ -1081,12 +1081,12 @@ static bool SectionIsExecutable(IMG img, ADDRINT sec_addr)
 {
 	SEC sec;
 
-	for (sec = IMG_SecHead(img); 
+	for (sec = IMG_SecHead(img);
 			SEC_Valid(sec) && SEC_Address(sec) <= sec_addr;
 			sec = SEC_Next(sec)) {
 		if (!SEC_IsExecutable(sec))
 			continue;
-		if (SEC_Address(sec) <= sec_addr && 
+		if (SEC_Address(sec) <= sec_addr &&
 				sec_addr < (SEC_Address(sec) + SEC_Size(sec)))
 			return true;
 	}
@@ -1104,7 +1104,7 @@ static void PatchRelocations(IMG img, SEC sec, ADDRINT orig_map, Image *image)
 	INT addend;
 
 	imglow = IMG_LowAddress(img);
-	
+
 	// Process relocation entries
 	reloc_start = SEC_Address(sec);
 	reloc_stop = reloc_start + SEC_Size(sec);
@@ -1118,7 +1118,7 @@ static void PatchRelocations(IMG img, SEC sec, ADDRINT orig_map, Image *image)
 			continue;
 
 		// Type of relocation
-		type = ELF32_R_TYPE(*(ADDRINT *)(reloc_start + 
+		type = ELF32_R_TYPE(*(ADDRINT *)(reloc_start +
 					sizeof(ADDRINT)));
 		// Randomized addend before it was overwritten by relocation
 		addend_r = *(ADDRINT *)(orig_map + offset);
@@ -1142,7 +1142,7 @@ static void PatchRelocations(IMG img, SEC sec, ADDRINT orig_map, Image *image)
 			// Randomize fixed_addr
 			fixed_addr = image->DecodeLong(offset, fixed_addr);
 
-			// Patch it in 
+			// Patch it in
 			*(ADDRINT *)(imglow + offset) = fixed_addr;
 			break;
 
@@ -1157,7 +1157,7 @@ static void PatchRelocations(IMG img, SEC sec, ADDRINT orig_map, Image *image)
 			// Randomize fixed_addr
 			fixed_addr = image->DecodeLong(offset, fixed_addr);
 
-			// Patch it in 
+			// Patch it in
 			*(ADDRINT *)(imglow + offset) = fixed_addr;
 			break;
 
@@ -1166,7 +1166,7 @@ static void PatchRelocations(IMG img, SEC sec, ADDRINT orig_map, Image *image)
 
 			/*
 			cerr << "Offset: " << hex << offset <<
-				" current: " << corrupted_addr << 
+				" current: " << corrupted_addr <<
 				" original randomized: " << addend_r <<
 				" original: " << addend <<
 				dec << endl;
@@ -1177,7 +1177,7 @@ static void PatchRelocations(IMG img, SEC sec, ADDRINT orig_map, Image *image)
 			// Randomize fixed_addr
 			fixed_addr = image->DecodeLong(offset, fixed_addr);
 
-			// Patch it in 
+			// Patch it in
 			*(ADDRINT *)((ADDRINT)imglow + offset) = fixed_addr;
 			break;
 
@@ -1281,7 +1281,7 @@ static VOID LoadImage(IMG img, VOID *v)
 
 	/*
 	cerr << IMG_Name(img) << ' ' << hex << imglow << '-' << imgend <<
-		" offset: " << IMG_LoadOffset(img) << 
+		" offset: " << IMG_LoadOffset(img) <<
 		" main: " << IMG_IsMainExecutable(img) << endl;
 	*/
 
@@ -1294,10 +1294,10 @@ static VOID LoadImage(IMG img, VOID *v)
 				SEC_Name(sec) != ".rel.dyn")
 			continue;
 
-		// I need to temporarily map this image as writeable to 
+		// I need to temporarily map this image as writeable to
 		// patch the relocated locations
 		memprotect = true;
-		mprotect((void *)imglow, imgsize, 
+		mprotect((void *)imglow, imgsize,
 				PROT_READ | PROT_EXEC | PROT_WRITE);
 
 		// Map the library to obtain the original pre-relocation data
@@ -1306,17 +1306,17 @@ static VOID LoadImage(IMG img, VOID *v)
 			fd = open(fname, O_RDONLY);
 			if (fd < 0) {
 				sstr << "WARNING: could not open file " << fname
-					<< " for reading relocation data" 
+					<< " for reading relocation data"
 					<< endl;
 				ERRLOG(sstr);
 				break;
 			}
 
-			orig_map = mmap(NULL, imgsize, PROT_READ, 
+			orig_map = mmap(NULL, imgsize, PROT_READ,
 					MAP_PRIVATE, fd, 0);
 			if (orig_map == MAP_FAILED) {
-				sstr << "WARNING: could not map file " << fname 
-					<< " for reading relocation data" 
+				sstr << "WARNING: could not map file " << fname
+					<< " for reading relocation data"
 					<< endl;
 				ERRLOG(sstr);
 				break;
@@ -1331,7 +1331,7 @@ static VOID LoadImage(IMG img, VOID *v)
 		munmap(orig_map, imgsize);
 	if (fd >= 0)
 		close(fd);
-	if (memprotect) 
+	if (memprotect)
 		mprotect((void *)imglow, imgsize, PROT_READ | PROT_EXEC);
 }
 
@@ -1339,10 +1339,10 @@ static VOID UnloadImage(IMG img, VOID *v)
 {
 	stringstream sstr;
 	ADDRINT low, high;
-	
+
 	low = IMG_LowAddress(img);
 	high = IMG_HighAddress(img);
-	sstr << "Unloading " << hex << (low & ~PAGEOFF_MASK) << '-' << 
+	sstr << "Unloading " << hex << (low & ~PAGEOFF_MASK) << '-' <<
 		(high | PAGEOFF_MASK) << ' ' << IMG_Name(img) << endl;
 	OUTLOG(sstr);
 	DeleteExecutableImage(low, high);
@@ -1366,7 +1366,7 @@ static VOID ForceExit(INT32 code)
 }
 
 static VOID ContextSwitch(THREADID threadIndex, CONTEXT_CHANGE_REASON reason,
-		const CONTEXT *from, CONTEXT *to, INT32 info, VOID *v) 
+		const CONTEXT *from, CONTEXT *to, INT32 info, VOID *v)
 {
 #ifdef SIGNAL_DEBUG
 	stringstream sstr;
@@ -1440,7 +1440,7 @@ int libisr_init(const char *dbfn)
 	IMG_AddInstrumentFunction(LoadImage, NULL);
 	IMG_AddUnloadFunction(UnloadImage, NULL);
 
-	// System calls needs to be tracked both for capturing image loading, 
+	// System calls needs to be tracked both for capturing image loading,
 	// as well as for the memory protector
 	PIN_AddSyscallEntryFunction(SyscallEntry, NULL);
 	PIN_AddSyscallExitFunction(SyscallExit, NULL);
@@ -1479,7 +1479,7 @@ int libisr_init(const char *dbfn)
 	return 0;
 }
 
-void libisr_cleanup(void) 
+void libisr_cleanup(void)
 {
 	// XXX
 }

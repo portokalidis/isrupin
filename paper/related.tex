@@ -1,0 +1,53 @@
+\section{Related}
+\label{sec:related}
+
+We can split CFI systems found in the literature into two main CFI approaches: 
+Systems that rely on just binaries and do not require recompiling 
+and those that require to be present in compilation time and act as 
+another level in the build toolchain. 
+Systems in the first category typically begin by disassembling the 
+executable and then attempting to identify transfer control edges 
+by constructing a CFG; some of those systems attempt to locate only 
+forward edges while others look into return addresses as well. Systems 
+from the second category since they have access during the build time, 
+can generally produce more complete CFG since they have access to 
+the source code but on the flip side require rebuilding of all modules 
+in the software and that is not possible in closed source modules or shared 
+libraries where source code is not freely available. Specifically for the shared 
+libraries, this is another key point where work found in the literature forks 
+since some systems support having shared libraries while others do not.
+
+
+
+In the table below ``Alignment'' refers to protection in jumping in the middle 
+of instructions due to x86 CISC dense architecture. ``Shared libraries'' represents 
+the ability of the system to work with modules not necessarily protected by 
+the technique and/or loaded at a later time. 
+Specifically for Safedispatch~\cite{jang2014safedispatch} while it is not a  general CFI system
+and targets vtables and hence C++ code; it was mentioned 
+extensively in the related work of most CFI systems; while it captures only JOP style 
+attacks targeting vtables it claims that this is one of the most important attack vectors, 
+this claim is supported by Tice et al.~\cite{tice2014enforcing} were they report that 
+vtable jumps correspond to 95-99\% of all Indirect Control Transfers. 
+
+Everyone assume additional protections such as stack canaries and DEP or WOX 
+and some form of ASLR.
+
+
+
+\begin{table*}[tp]
+\centering
+\caption{Comparison Table}
+\label{table:overview}
+\begin{tabular}{lcc|c|c|c|c|c|c|c}
+\cline{4-9}
+        & \multicolumn{1}{l}{}                   & \multicolumn{1}{l|}{}          & \multicolumn{6}{c|}{Protects}               & \multicolumn{1}{l}{}             \\ \hline
+\multicolumn{1}{|l|}{Name}           & \multicolumn{1}{c|}{Relocation Tables} & \multicolumn{1}{l|}{Compiling} & \multicolumn{1}{l|}{Vtable} & \multicolumn{1}{l|}{Indirect} & \multicolumn{1}{l|}{Direct} & \multicolumn{1}{l|}{Ret} & \multicolumn{1}{l|}{SharedLibraries} & \multicolumn{1}{l|}{Alignment} & \multicolumn{1}{l|}{Performance} \\ \hline
+\multicolumn{1}{|l|}{CCFIR\cite{zhang2013practical}}          & \multicolumn{1}{c|}{X}                 & X & -                           & \checkmark & DEP                         &\checkmark& \checkmark       & \checkmark                            & \multicolumn{1}{c|}{3.6\%/8.1\%} \\ \hline
+\multicolumn{1}{|l|}{binCFI\cite{zhang2013control}}         & \multicolumn{1}{c|}{two versions}      & X & \checkmark & \checkmark & DEP & \checkmark & \checkmark       & \checkmark & \multicolumn{1}{c|}{12\%-45\%}   \\ \hline
+\multicolumn{1}{|l|}{ForwardEdgeCFI\cite{tice2014enforcing}} & \multicolumn{1}{c|}{-} & \checkmark & \checkmark & \checkmark & DEP & X & \checkmark       & \checkmark & \multicolumn{1}{c|}{2\%/8\%}     \\ \hline
+
+\multicolumn{1}{|l|}{CFI\cite{Abadi:2005:CI:1102120.1102165}}            & \multicolumn{1}{c|}{\checkmark}                 & X & \checkmark & \checkmark & DEP & \checkmark & \checkmark       & \checkmark & \multicolumn{1}{c|}{15\%/46\%}   \\ \hline
+\multicolumn{1}{|l|}{Safedispatch}   & \multicolumn{1}{c|}{-}                 & \checkmark & \checkmark                           & - & DEP                         & - & X       & \checkmark & \multicolumn{1}{c|}{2.1\%}       \\ \hline
+\end{tabular}
+\end{table*}
