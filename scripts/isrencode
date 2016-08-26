@@ -83,15 +83,17 @@ while [ ! -z "$1" ]; do
         dest_path="$dest/$orig_fname"
     fi
 
+    real_dest_path=`readlink -f $dest_path`
+
     #echo "Original path: $orig_path"
-    #echo "Destination path: $dest_path"
+    #echo "Destination path: $real_dest_path"
 
     # Check that file does not already exist in DB
-    sqlstmt="select keyid from image where path='$dest_path'"
+    sqlstmt="select keyid from image where path='$real_dest_path'"
     keyid=`$SQLITE $DBFILE "$sqlstmt"`
     #echo $keyid=$SQLITE $DBFILE "$sqlstmt"
     if [ -n "$keyid" ]; then
-        echo "$dest_path [Already in database]" >&2 
+        echo "$real_dest_path [Already in database]" >&2 
         exit 1
     fi
 
@@ -107,7 +109,7 @@ while [ ! -z "$1" ]; do
     chmod `stat --format="%a" $orig_path` $dest_path || (rm $dest_path; exit 1)
 
     # Add key in DB
-    sqlstmt="BEGIN TRANSACTION; insert into image_key (key) values (x'$enckey'); insert into image values ('$dest_path', (select last_insert_rowid())); COMMIT TRANSACTION;"
+    sqlstmt="BEGIN TRANSACTION; insert into image_key (key) values (x'$enckey'); insert into image values ('$real_dest_path', (select last_insert_rowid())); COMMIT TRANSACTION;"
     #echo $SQLITE $DBFILE "$sqlstmt"
     $SQLITE $DBFILE "$sqlstmt" || (rm $dest_path; exit 1)
 
