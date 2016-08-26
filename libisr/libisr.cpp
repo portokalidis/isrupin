@@ -166,10 +166,7 @@ query_error:
 		img->SetKey(htobe16(*(uint16_t *)key_p));
 
 	} else if (r == SQLITE_DONE) {
-#if 0
-		OutFile << "NOTICE: No key found for " << path <<
-			". Assuming file is not encrypted." << endl;
-#endif
+		DBGLOG("No key found for image\n");
 	} else
 		goto query_error;
 
